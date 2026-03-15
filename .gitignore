@@ -1,0 +1,44 @@
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Gradle and Kotlin build cache
+.gradle/
+.kotlin/
+
+# Local machine configuration
+local.properties
+
+# Build outputs (root + all modules)
+build/
+**/build/
+captures/
+
+# Native build outputs
+.externalNativeBuild/
+.cxx/
+
+# Android Studio / IntelliJ local state
+*.iml
+*.ipr
+*.iws
+out/
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/shelf/
+
+# Signing keys and secrets
+*.jks
+*.keystore
+*.p12
+*.pem
+keystore.properties
+
+# Packaged application artifacts
+*.apk
+*.ap_
+*.aab
