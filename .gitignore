@@ -30,6 +30,7 @@ out/
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
 .idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
 .idea/shelf/
 
 # Signing keys and secrets

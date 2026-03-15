@@ -80,6 +80,26 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun toggleSelectionForIds(photoIds: Set<Long>) {
+        if (photoIds.isEmpty()) return
+
+        _uiState.update { state ->
+            val allSelected = photoIds.all { it in state.selectedIds }
+            val newSelected = if (allSelected) {
+                state.selectedIds - photoIds
+            } else {
+                state.selectedIds + photoIds
+            }
+
+            val selectedSavingBytes = state.photos
+                .asSequence()
+                .filter { it.id in newSelected }
+                .sumOf { it.videoOffset.coerceAtLeast(0L) }
+
+            state.copy(selectedIds = newSelected, selectedSavingBytes = selectedSavingBytes, isConfirming = false)
+        }
+    }
+
     fun openPreview(photo: MotionPhoto) {
         _uiState.update {
             it.copy(
