@@ -127,7 +127,7 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
                 val successfulUris = mutableListOf<Uri>()
 
                 selectedPhotos.forEachIndexed { index, photo ->
-                    val success = repository.slimPhoto(photo)
+                    val success = repository.compactPhoto(photo)
                     if (success) {
                         successfulUris.add(photo.uri)
                     }

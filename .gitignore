@@ -29,6 +29,7 @@ out/
 .idea/workspace.xml
 .idea/navEditor.xml
 .idea/assetWizardSettings.xml
+.idea/deploymentTargetSelector.xml
 .idea/shelf/
 
 # Signing keys and secrets
@@ -42,3 +43,4 @@ keystore.properties
 *.apk
 *.ap_
 *.aab
+

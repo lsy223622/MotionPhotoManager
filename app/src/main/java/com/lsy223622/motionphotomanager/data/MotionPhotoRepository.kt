@@ -20,14 +20,14 @@ class MotionPhotoRepository(private val context: Context) {
     private val motionPhotoNamePatterns = arrayOf("MVIMG_%", "PXL_%", "%_MP.jpg")
     private val videoLengthRegex = Regex("Item:Mime=\\\"video/mp4\\\"(?s).*?Item:Length=\\\"(\\d+)\\\"")
 
-    private fun buildSlimDisplayName(originalName: String): String {
+    private fun buildCompactedDisplayName(originalName: String): String {
         val base = when {
             originalName.startsWith("MVIMG_", ignoreCase = true) -> {
                 "IMG_" + originalName.removePrefix("MVIMG_")
             }
             else -> originalName
         }
-        return "SLIM_$base"
+        return "COMPACT_$base"
     }
 
     suspend fun fetchMotionPhotos(): List<MotionPhoto> = withContext(Dispatchers.IO) {
@@ -203,7 +203,7 @@ class MotionPhotoRepository(private val context: Context) {
         return true
     }
 
-    suspend fun slimPhoto(photo: MotionPhoto): Boolean = withContext(Dispatchers.IO) {
+    suspend fun compactPhoto(photo: MotionPhoto): Boolean = withContext(Dispatchers.IO) {
         try {
             val contentResolver = context.contentResolver
             val resolvedVideoOffset = if (photo.videoOffset > 0) photo.videoOffset else findVideoOffset(photo.uri)
@@ -232,7 +232,7 @@ class MotionPhotoRepository(private val context: Context) {
             
             // 1. Prepare new file metadata
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, buildSlimDisplayName(photo.name))
+                put(MediaStore.Images.Media.DISPLAY_NAME, buildCompactedDisplayName(photo.name))
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                 put(MediaStore.Images.Media.DATE_TAKEN, photo.dateTaken)
                 put(MediaStore.Images.Media.DATE_ADDED, photo.dateTaken / 1000) // Sync added time
@@ -270,7 +270,7 @@ class MotionPhotoRepository(private val context: Context) {
                 return@withContext false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error slimming photo ${photo.uri}", e)
+            Log.e(TAG, "Error compacting photo ${photo.uri}", e)
             false
         }
     }

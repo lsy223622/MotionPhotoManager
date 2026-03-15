@@ -340,7 +340,7 @@ fun BottomFloatingConsole(
             ) {
                 if (!isSelecting && !uiState.isProcessing) {
                     Text(
-                        "Select motion photos to slim",
+                        "Select photos",
                         modifier = Modifier.padding(start = 16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -383,7 +383,7 @@ fun BottomFloatingConsole(
                                 shape = RoundedCornerShape(25.dp),
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
                             ) {
-                                Text("Slim Now", fontSize = 16.sp)
+                                Text("Remove Motion", fontSize = 16.sp)
                             }
                         }
                         "processing" -> {
@@ -399,7 +399,7 @@ fun BottomFloatingConsole(
                                 shape = RoundedCornerShape(25.dp),
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
                             ) {
-                                Text("Slim Now")
+                                Text("Remove Motion")
                             }
                         }
                     }
