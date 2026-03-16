@@ -85,6 +85,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -237,6 +238,9 @@ class MainActivity : ComponentActivity() {
                     SharedTransitionLayout {
                         var lastPreviewPhoto by remember { mutableStateOf<MotionPhoto?>(null) }
                         val gridScrollState = rememberLazyListState()
+                        // 共享缩放状态：让 grid 和 preview 两侧的 boundsTransform 保持同步
+                        var previewZoomScale by remember { mutableFloatStateOf(1f) }
+                        var previewZoomOffset by remember { mutableStateOf(Offset.Zero) }
                         if (uiState.previewPhoto != null) {
                             lastPreviewPhoto = uiState.previewPhoto
                         }
@@ -307,6 +311,8 @@ class MainActivity : ComponentActivity() {
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedVisibility,
                                         scrollState = gridScrollState,
+                                        previewZoomScale = previewZoomScale,
+                                        previewZoomOffset = previewZoomOffset,
                                         modifier = Modifier.padding(innerPadding)
                                     )
                                 }
@@ -354,6 +360,10 @@ class MainActivity : ComponentActivity() {
                                     onDismiss = { viewModel.closePreview() },
                                     onToggleSelection = { viewModel.toggleSelection(it) },
                                     onPhotoChanged = { viewModel.openPreview(it) },
+                                    onPreviewZoomChanged = { scale, offset ->
+                                        previewZoomScale = scale
+                                        previewZoomOffset = offset
+                                    },
                                     sharedTransitionScope = this@SharedTransitionLayout,
                                     animatedVisibilityScope = this@AnimatedVisibility
                                 )
@@ -386,8 +396,10 @@ fun MotionPhotoGrid(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     scrollState: LazyListState,
+    previewZoomScale: Float,
+    previewZoomOffset: Offset,
     modifier: Modifier = Modifier
-) {
+){
     val groupedPhotos = buildDateGroups(photos)
 
     LazyColumn(
@@ -431,6 +443,8 @@ fun MotionPhotoGrid(
                             onToggleSelection = onToggleSelection,
                             sharedTransitionScope = sharedTransitionScope,
                             animatedVisibilityScope = animatedVisibilityScope,
+                            previewZoomScale = previewZoomScale,
+                            previewZoomOffset = previewZoomOffset,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -497,8 +511,10 @@ private fun PhotoGridItem(
     onToggleSelection: (Long) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    previewZoomScale: Float,
+    previewZoomOffset: Offset,
     modifier: Modifier = Modifier
-) {
+){
     val context = LocalContext.current
     // 保持 Coil 缓存强同步
     val imageRequest = remember(photo.uri, photo.id) {
@@ -522,7 +538,14 @@ private fun PhotoGridItem(
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = ::previewBoundsTransform,
+                        boundsTransform = { initialBounds, targetBounds ->
+                            previewBoundsTransform(
+                                initialBounds = initialBounds,
+                                targetBounds = targetBounds,
+                                startScale = previewZoomScale,
+                                startOffset = previewZoomOffset
+                            )
+                        },
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
                             contentScale = ContentScale.Crop
                         ),
@@ -802,9 +825,10 @@ private fun MotionPhotoPreviewScreen(
     onDismiss: () -> Unit,
     onToggleSelection: (Long) -> Unit,
     onPhotoChanged: (MotionPhoto) -> Unit,
+    onPreviewZoomChanged: (Float, Offset) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope
-) {
+){
     val photo = currentPhoto ?: return
     if (photos.isEmpty()) return
 
@@ -870,6 +894,13 @@ private fun MotionPhotoPreviewScreen(
             val isActivePage = pagePhoto.id == currentPhoto.id
             var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
             var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
+
+            // 将当前活动页的缩放状态同步到父级，确保 grid 侧的 boundsTransform 能读到一致的值
+            if (isActivePage) {
+                SideEffect {
+                    onPreviewZoomChanged(pageScale, pageOffset)
+                }
+            }
 
             // 退出动画时，boundsTransform 已经用 transformedBounds 将缩放/平移编码进起始 Rect，
             // 此时 graphicsLayer 必须归零，否则会与 boundsTransform 双重叠加。
