@@ -23,6 +23,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -73,7 +78,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +89,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.alpha
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -91,6 +102,7 @@ import com.lsy223622.motionphotomanager.ui.theme.MotionPhotoManagerTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -256,9 +268,9 @@ fun MotionPhotoGrid(
     ) {
         groupedPhotos.forEach { group ->
             val selectedCount = group.photoIds.count { it in selectedIds }
-            val dayCheckState = when {
-                selectedCount == 0 -> CircleCheckState.Unchecked
-                selectedCount == group.photoIds.size -> CircleCheckState.Checked
+            val dayCheckState = when (selectedCount) {
+                0 -> CircleCheckState.Unchecked
+                group.photoIds.size -> CircleCheckState.Checked
                 else -> CircleCheckState.Indeterminate
             }
 
@@ -641,13 +653,16 @@ private fun MotionPhotoPreviewScreen(
     val initialIndex = photos.indexOfFirst { it.id == photo.id }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }
 
-    var shouldPlay by remember(currentPhoto.id) { mutableStateOf(false) }
+    var togglePlay by remember(currentPhoto.id) { mutableStateOf(false) }
+    var pressPlay by remember(currentPhoto.id) { mutableStateOf(false) }
     var isMuted by remember(currentPhoto.id) { mutableStateOf(true) }
     var isPlayerReady by remember(currentPhoto.id) { mutableStateOf(false) }
     var mediaPlayerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
+    val shouldPlay = togglePlay || pressPlay
 
     LaunchedEffect(currentPhoto.id, photos) {
+        togglePlay = false
         val target = photos.indexOfFirst { it.id == currentPhoto.id }
         if (target >= 0 && pagerState.currentPage != target) {
             pagerState.scrollToPage(target)
@@ -684,62 +699,156 @@ private fun MotionPhotoPreviewScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = 96.dp, bottom = 220.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val pagePhoto = photos[page]
-                val isActivePage = pagePhoto.id == currentPhoto.id
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            val pagePhoto = photos[page]
+            val isActivePage = pagePhoto.id == currentPhoto.id
+            var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
+            var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
 
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (isActivePage && shouldPlay && previewVideoPath != null) {
-                        AndroidView(
-                            modifier = Modifier.fillMaxSize(),
-                            factory = { ctx ->
-                                VideoView(ctx).apply {
-                                    videoViewRef = this
-                                    setVideoPath(previewVideoPath)
-                                    setOnPreparedListener { player ->
-                                        isPlayerReady = true
-                                        mediaPlayerRef = player
-                                        player.isLooping = true
-                                        val volume = if (isMuted) 0f else 1f
-                                        runCatching { player.setVolume(volume, volume) }
-                                        if (shouldPlay) runCatching { start() }
-                                    }
+            // 1. 视觉变换 Modifier：将缩放和平移应用在最外层，让图片和视频能同步缩放
+            val visualModifier = Modifier.graphicsLayer {
+                scaleX = pageScale
+                scaleY = pageScale
+                translationX = pageOffset.x
+                translationY = pageOffset.y - 18.dp.toPx()
+            }
+
+            // 2. 手势拦截 Modifier：使用开源社区级方案，彻底解决翻页冲突
+            val gestureModifier = Modifier
+                .pointerInput(pagePhoto.id) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            // 如果事件已经被外层 Pager 翻页消费了，我们就放行
+                            if (event.changes.any { it.isConsumed }) continue
+
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+
+                            val isZooming = event.changes.size > 1
+                            val isZoomedIn = pageScale > 1f
+
+                            // 【核心分流点】：只有当双指操作，或者图片被放大的时候，才拦截手势！
+                            if (isZooming || isZoomedIn) {
+                                val newScale = (pageScale * zoom).coerceIn(1f, 4f)
+                                if (newScale == 1f) {
+                                    pageOffset = Offset.Zero
+                                } else {
+                                    pageOffset += pan
                                 }
-                            },
-                            update = { view ->
-                                videoViewRef = view
-                                if (view.tag != previewVideoPath) {
-                                    view.tag = previewVideoPath
-                                    isPlayerReady = false
-                                    mediaPlayerRef = null
-                                    view.setVideoPath(previewVideoPath)
-                                }
-                                if (shouldPlay && !view.isPlaying && isPlayerReady) {
-                                    runCatching { view.start() }
-                                }
-                                if (!shouldPlay && view.isPlaying) {
-                                    runCatching { view.pause() }
-                                }
+                                pageScale = newScale
+
+                                // 主动接管并消费事件，阻止它传给外层的 HorizontalPager
+                                event.changes.forEach { it.consume() }
                             }
-                        )
-                    } else {
-                        AsyncImage(
-                            model = pagePhoto.uri,
-                            contentDescription = pagePhoto.name,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
+                        } while (event.changes.any { it.pressed })
                     }
                 }
+                .pointerInput(isActivePage, previewVideoPath) {
+                    // 长按播放和双击恢复逻辑保持不变，它会在底层事件放行时完美触发
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (pageScale > 1f) {
+                                pageScale = 1f
+                                pageOffset = Offset.Zero
+                            } else {
+                                pageScale = 2f
+                            }
+                        },
+                        onPress = {
+                            if (isActivePage && previewVideoPath != null) {
+                                val releasedBeforeThreshold = withTimeoutOrNull(180L) {
+                                    tryAwaitRelease()
+                                } != null
+
+                                if (!releasedBeforeThreshold) {
+                                    try {
+                                        pressPlay = true
+                                        tryAwaitRelease()
+                                    } finally {
+                                        pressPlay = false
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+
+            // 最外层容器，应用视觉缩放
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(visualModifier),
+                contentAlignment = Alignment.Center
+            ) {
+                // 【第 1 层：底层】 视频层
+                if (isActivePage && previewVideoPath != null) {
+                    AndroidView(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(if (shouldPlay && isPlayerReady) 1f else 0f),
+                        factory = { ctx ->
+                            VideoView(ctx).apply {
+                                videoViewRef = this
+                                // 彻底阉割 VideoView 的原生触摸反馈，防止它干扰 Compose
+                                isClickable = false
+                                isLongClickable = false
+                                isFocusable = false
+                                setOnTouchListener { _, _ -> false }
+
+                                setVideoPath(previewVideoPath)
+                                setOnPreparedListener { player ->
+                                    isPlayerReady = true
+                                    mediaPlayerRef = player
+                                    player.isLooping = true
+                                    val volume = if (isMuted) 0f else 1f
+                                    runCatching { player.setVolume(volume, volume) }
+                                    if (shouldPlay) runCatching { start() }
+                                }
+                            }
+                        },
+                        update = { view ->
+                            videoViewRef = view
+                            if (view.tag != previewVideoPath) {
+                                view.tag = previewVideoPath
+                                isPlayerReady = false
+                                mediaPlayerRef = null
+                                view.setVideoPath(previewVideoPath)
+                            }
+                            if (shouldPlay && !view.isPlaying && isPlayerReady) {
+                                runCatching { view.start() }
+                            }
+                            if (!shouldPlay && view.isPlaying) {
+                                runCatching {
+                                    view.pause()
+                                    view.seekTo(0) // 停止时重置进度
+                                }
+                            }
+                        }
+                    )
+                }
+
+                // 【第 2 层：中层】 静态图片层
+                if (!shouldPlay || !isPlayerReady) {
+                    AsyncImage(
+                        model = pagePhoto.uri,
+                        contentDescription = pagePhoto.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                // 【第 3 层：顶层】 纯透明的手势拦截遮罩
+                // 它覆盖在最上面，100% 优先拿到所有的手指触摸事件，直接化解了翻页和长按失效的问题
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(gestureModifier)
+                )
             }
         }
 
@@ -762,67 +871,66 @@ private fun MotionPhotoPreviewScreen(
                 modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = activePhoto.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
-                )
-                CircularSelectionCheckbox(
-                    state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
-                    onClick = { onToggleSelection(activePhoto.id) },
-                    modifier = Modifier.padding(start = 8.dp)
-                )
-
-                IconButton(
-                    onClick = {
-                        if (previewVideoPath != null && activePhoto.id == currentPhoto.id) {
-                            shouldPlay = !shouldPlay
-                        }
-                    },
-                    modifier = Modifier
-                        .padding(start = 10.dp)
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.45f))
-                ) {
-                    Icon(
-                        imageVector = if (shouldPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = if (shouldPlay) "Pause video" else "Play video",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = activePhoto.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${pagerState.currentPage + 1} / ${photos.size}",
+                        color = Color.White.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.labelSmall
                     )
                 }
 
-                IconButton(
-                    onClick = { isMuted = !isMuted },
-                    modifier = Modifier
-                        .padding(start = 8.dp)
-                        .size(42.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.45f))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 8.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                        contentDescription = if (isMuted) "Unmute video" else "Mute video",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    IconButton(
+                        onClick = {
+                            if (previewVideoPath != null && activePhoto.id == currentPhoto.id) {
+                                togglePlay = !togglePlay
+                            }
+                        },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (shouldPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (shouldPlay) "Stop video" else "Play video",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { isMuted = !isMuted },
+                        modifier = Modifier.size(38.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                            contentDescription = if (isMuted) "Unmute video" else "Mute video",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier.size(38.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularSelectionCheckbox(
+                            state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
+                            onClick = { onToggleSelection(activePhoto.id) }
+                        )
+                    }
                 }
             }
         }
 
-        Text(
-            text = "${pagerState.currentPage + 1} / ${photos.size}",
-            color = Color.White.copy(alpha = 0.85f),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 236.dp)
-                .background(Color.Black.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
-                .padding(horizontal = 10.dp, vertical = 4.dp)
-        )
     }
 }

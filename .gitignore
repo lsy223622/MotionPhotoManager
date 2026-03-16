@@ -45,3 +45,4 @@ keystore.properties
 *.ap_
 *.aab
 
+*.log
