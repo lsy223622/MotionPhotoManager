@@ -15,9 +15,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateDpAsState
@@ -48,7 +46,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -739,7 +736,6 @@ private fun MotionPhotoPreviewScreen(
 
     BackHandler(enabled = true) {
         togglePlay = false
-        pressPlay = false
         onDismiss()
     }
 
@@ -789,9 +785,6 @@ private fun MotionPhotoPreviewScreen(
             val isActivePage = pagePhoto.id == currentPhoto.id
             var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
             var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
-
-            // --- 【新增】判断这是否是用户当前停留的页面 ---
-            val isCurrentVisiblePage = page == pagerState.currentPage
 
             // 1. 视觉变换 Modifier：将缩放和平移应用在最外层，让图片和视频能同步缩放
             val visualModifier = Modifier.graphicsLayer {

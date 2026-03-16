@@ -16,7 +16,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 class MotionPhotoRepository(private val context: Context) {
-    private val TAG = "MotionPhotoRepository"
+    private val tag = "MotionPhotoRepository"
     private val motionPhotoNamePatterns = arrayOf("MVIMG_%", "PXL_%", "%_MP.jpg")
     private val videoLengthRegex = Regex("Item:Mime=\\\"video/mp4\\\"(?s).*?Item:Length=\\\"(\\d+)\\\"")
 
@@ -129,7 +129,7 @@ class MotionPhotoRepository(private val context: Context) {
 
             if (previewFile.length() > 0L) previewFile.absolutePath else null
         } catch (e: Exception) {
-            Log.e(TAG, "Error preparing preview for ${photo.uri}", e)
+            Log.e(tag, "Error preparing preview for ${photo.uri}", e)
             null
         }
     }
@@ -142,7 +142,7 @@ class MotionPhotoRepository(private val context: Context) {
                 extractVideoItemLength(metadataText)?.let { return it }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error finding video offset for $uri", e)
+            Log.e(tag, "Error finding video offset for $uri", e)
         }
         return -1L
     }
@@ -216,7 +216,7 @@ class MotionPhotoRepository(private val context: Context) {
             val contentResolver = context.contentResolver
             val resolvedVideoOffset = if (photo.videoOffset > 0) photo.videoOffset else findVideoOffset(photo.uri)
             if (resolvedVideoOffset <= 0L) {
-                Log.w(TAG, "Skip non-motion or unsupported file: ${photo.uri}")
+                Log.w(tag, "Skip non-motion or unsupported file: ${photo.uri}")
                 return@withContext false
             }
 
@@ -228,16 +228,13 @@ class MotionPhotoRepository(private val context: Context) {
                 } ?: -1L
             }
             if (totalLength <= 0L) {
-                Log.w(TAG, "Unable to determine file length for ${photo.uri}")
+                Log.w(tag, "Unable to determine file length for ${photo.uri}")
                 return@withContext false
             }
 
-            val sourceRelativePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val sourceRelativePath =
                 querySourceRelativePath(photo.uri)
-            } else {
-                null
-            }
-            
+
             // 1. Prepare new file metadata
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, buildCompactedDisplayName(photo.name))
@@ -245,20 +242,15 @@ class MotionPhotoRepository(private val context: Context) {
                 put(MediaStore.Images.Media.DATE_TAKEN, photo.dateTaken)
                 put(MediaStore.Images.Media.DATE_ADDED, photo.dateTaken / 1000) // Sync added time
                 put(MediaStore.Images.Media.DATE_MODIFIED, photo.dateModified)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    put(MediaStore.Images.Media.RELATIVE_PATH, sourceRelativePath ?: (Environment.DIRECTORY_DCIM + "/Camera"))
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                }
+                put(MediaStore.Images.Media.RELATIVE_PATH, sourceRelativePath ?: (Environment.DIRECTORY_DCIM + "/Camera"))
+                put(MediaStore.Images.Media.IS_PENDING, 1)
             }
 
             val newUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
 
             // 2. Perform extraction
-            val originalUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val originalUri =
                 MediaStore.setRequireOriginal(photo.uri) // 强行要求系统返回带经纬度的原始流
-            } else {
-                photo.uri
-            }
             val success = contentResolver.openInputStream(originalUri)?.use { input ->
                 contentResolver.openOutputStream(newUri)?.use { output ->
                     MotionPhotoProcessor.extractStaticImage(input, output, resolvedVideoOffset, totalLength)
@@ -266,11 +258,9 @@ class MotionPhotoRepository(private val context: Context) {
             } ?: false
 
             if (success) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    values.clear()
-                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    contentResolver.update(newUri, values, null, null)
-                }
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                contentResolver.update(newUri, values, null, null)
                 // Trash original photo logic should be handled by the UI/ViewModel because it requires a PendingIntent on Android 11+
                 return@withContext true
             } else {
@@ -278,13 +268,12 @@ class MotionPhotoRepository(private val context: Context) {
                 return@withContext false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error compacting photo ${photo.uri}", e)
+            Log.e(tag, "Error compacting photo ${photo.uri}", e)
             false
         }
     }
 
     private fun querySourceRelativePath(uri: Uri): String? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
 
         val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
         context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
@@ -296,49 +285,4 @@ class MotionPhotoRepository(private val context: Context) {
         return null
     }
 
-    suspend fun ensureUrisTrashed(uris: List<Uri>): Int = withContext(Dispatchers.IO) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || uris.isEmpty()) {
-            return@withContext 0
-        }
-
-        var trashedCount = 0
-        val resolver = context.contentResolver
-
-        uris.forEach { uri ->
-            try {
-                if (isUriTrashed(uri)) {
-                    trashedCount++
-                    return@forEach
-                }
-
-                val values = ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_TRASHED, 1)
-                }
-                resolver.update(uri, values, null, null)
-
-                if (isUriTrashed(uri)) {
-                    trashedCount++
-                } else {
-                    Log.w(TAG, "Failed to mark as trashed: $uri")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error ensuring trashed state for $uri", e)
-            }
-        }
-
-        trashedCount
-    }
-
-    private fun isUriTrashed(uri: Uri): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
-
-        val projection = arrayOf(MediaStore.MediaColumns.IS_TRASHED)
-        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-            if (!cursor.moveToFirst()) return false
-            val columnIndex = cursor.getColumnIndex(MediaStore.MediaColumns.IS_TRASHED)
-            if (columnIndex == -1) return false
-            return cursor.getInt(columnIndex) == 1
-        }
-        return false
-    }
 }
