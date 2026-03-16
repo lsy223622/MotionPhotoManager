@@ -2,11 +2,13 @@ package com.lsy223622.motionphotomanager
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import android.widget.VideoView
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -15,10 +17,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,6 +46,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -88,6 +97,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -99,6 +110,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -111,11 +124,59 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private const val PREVIEW_FADE_IN_DURATION_MS = 140
+private const val PREVIEW_FADE_OUT_DURATION_MS = 110
+private const val PREVIEW_FADE_OUT_DELAY_MS = 40
+private const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 240
+
+private fun previewBoundsTransform(
+    initialBounds: Rect,
+    targetBounds: Rect,
+    startScale: Float = 1f,
+    startOffset: Offset = Offset.Zero
+) =
+    if ((targetBounds.width * targetBounds.height) > (initialBounds.width * initialBounds.height)) {
+        keyframes {
+            durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
+            lerp(initialBounds, targetBounds, 1.055f) at (PREVIEW_SHARED_BOUNDS_DURATION_MS / 2) using FastOutLinearInEasing
+            targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS using LinearOutSlowInEasing
+        }
+    } else {
+        keyframes {
+            durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
+            transformedBounds(initialBounds, startScale, startOffset) at 0 using FastOutSlowInEasing
+            targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS
+        }
+    }
+
+private fun transformedBounds(bounds: Rect, scale: Float, offset: Offset): Rect {
+    val center = bounds.center + offset
+    val halfWidth = bounds.width * scale / 2f
+    val halfHeight = bounds.height * scale / 2f
+    return Rect(
+        left = center.x - halfWidth,
+        top = center.y - halfHeight,
+        right = center.x + halfWidth,
+        bottom = center.y + halfHeight
+    )
+}
+
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         setContent {
             MotionPhotoManagerTheme {
                 val viewModel: MotionPhotoViewModel = viewModel()
@@ -182,13 +243,25 @@ class MainActivity : ComponentActivity() {
 
                         AnimatedVisibility(
                             visible = uiState.previewPhoto == null,
-                            enter = fadeIn(),
-                            exit = fadeOut()
+                            enter = fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_IN_DURATION_MS,
+                                    easing = FastOutSlowInEasing
+                                )
+                            ),
+                            exit = fadeOut(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_OUT_DURATION_MS,
+                                    easing = FastOutSlowInEasing
+                                )
+                            )
                         ) {
                             Scaffold(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .then(if (uiState.isProcessing) Modifier.blur(10.dp) else Modifier),
+                                containerColor = Color.Transparent,
+                                contentWindowInsets = WindowInsets(0, 0, 0, 0),
                                 topBar = {
                                     LargeTopAppBar(
                                         title = {
@@ -257,8 +330,19 @@ class MainActivity : ComponentActivity() {
 
                         AnimatedVisibility(
                             visible = uiState.previewPhoto != null,
-                            enter = fadeIn(),
-                            exit = fadeOut()
+                            enter = fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_IN_DURATION_MS,
+                                    easing = FastOutSlowInEasing
+                                )
+                            ),
+                            exit = fadeOut(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_OUT_DURATION_MS - PREVIEW_FADE_OUT_DELAY_MS,
+                                    delayMillis = PREVIEW_FADE_OUT_DELAY_MS,
+                                    easing = FastOutSlowInEasing
+                                )
+                            )
                         ) {
                             lastPreviewPhoto?.let { photo ->
                                 MotionPhotoPreviewScreen(
@@ -275,16 +359,16 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-
-                        BottomFloatingConsole(
-                            uiState = uiState,
-                            onStartProcessing = { viewModel.startProcessing(trashLauncher) },
-                            onSetConfirming = { viewModel.setConfirming(it) },
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
-                        )
                     }
+
+                    BottomFloatingConsole(
+                        uiState = uiState,
+                        onStartProcessing = { viewModel.startProcessing(trashLauncher) },
+                        onSetConfirming = { viewModel.setConfirming(it) },
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
+                    )
                 }
             }
         }
@@ -438,6 +522,7 @@ private fun PhotoGridItem(
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = ::previewBoundsTransform,
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
                             contentScale = ContentScale.Crop
                         ),
@@ -786,12 +871,18 @@ private fun MotionPhotoPreviewScreen(
             var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
             var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
 
+            // 退出动画时，boundsTransform 已经用 transformedBounds 将缩放/平移编码进起始 Rect，
+            // 此时 graphicsLayer 必须归零，否则会与 boundsTransform 双重叠加。
+            val isExiting = animatedVisibilityScope.transition.targetState == EnterExitState.PostExit
+
             // 1. 视觉变换 Modifier：将缩放和平移应用在最外层，让图片和视频能同步缩放
             val visualModifier = Modifier.graphicsLayer {
-                scaleX = pageScale
-                scaleY = pageScale
-                translationX = pageOffset.x
-                translationY = pageOffset.y
+                val effectiveScale = if (isExiting && isActivePage) 1f else pageScale
+                val effectiveOffset = if (isExiting && isActivePage) Offset.Zero else pageOffset
+                scaleX = effectiveScale
+                scaleY = effectiveScale
+                translationX = effectiveOffset.x
+                translationY = effectiveOffset.y
             }
 
             // 2. 手势拦截 Modifier：使用开源社区级方案，彻底解决翻页冲突
@@ -856,12 +947,11 @@ private fun MotionPhotoPreviewScreen(
                     )
                 }
 
-            // 最外层容器，应用视觉缩放
+            // 最外层容器
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .offset(y = (-18).dp)
-                    .then(visualModifier),
+                    .offset(y = (-18).dp),
                 contentAlignment = Alignment.Center
             ) {
                 // 【第 1 层：底层】 视频层
@@ -869,6 +959,7 @@ private fun MotionPhotoPreviewScreen(
                     AndroidView(
                         modifier = Modifier
                             .fillMaxSize()
+                            .then(visualModifier)
                             .alpha(if (shouldPlay && isPlayerReady) 1f else 0f),
                         factory = { ctx ->
                             VideoView(ctx).apply {
@@ -937,6 +1028,14 @@ private fun MotionPhotoPreviewScreen(
                                     Modifier.sharedBounds(
                                         sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
                                         animatedVisibilityScope = animatedVisibilityScope,
+                                        boundsTransform = { initialBounds, targetBounds ->
+                                            previewBoundsTransform(
+                                                initialBounds = initialBounds,
+                                                targetBounds = targetBounds,
+                                                startScale = pageScale,
+                                                startOffset = pageOffset
+                                            )
+                                        },
                                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
                                             contentScale = ContentScale.Crop
                                         )
@@ -945,6 +1044,7 @@ private fun MotionPhotoPreviewScreen(
                                     Modifier
                                 }
                             )
+                            .then(visualModifier)
                             .aspectRatio(photoAspectRatio)
                             .alpha(if (showStaticImage) 1f else 0f),
                         contentScale = ContentScale.Crop
