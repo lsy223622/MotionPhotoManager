@@ -10,5 +10,7 @@ data class MotionPhoto(
     val dateTaken: Long,
     val dateModified: Long,
     val videoOffset: Long = -1,
-    val isSelected: Boolean = false
+    val isSelected: Boolean = false,
+    val width: Int = 0,
+    val height: Int = 0
 )

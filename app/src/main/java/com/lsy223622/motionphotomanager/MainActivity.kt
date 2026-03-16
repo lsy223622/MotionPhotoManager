@@ -50,7 +50,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -170,17 +172,21 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                Box(modifier = Modifier.fillMaxSize()) {
+                Box(modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                ) {
                     SharedTransitionLayout {
                         var lastPreviewPhoto by remember { mutableStateOf<MotionPhoto?>(null) }
+                        val gridScrollState = rememberLazyListState()
                         if (uiState.previewPhoto != null) {
                             lastPreviewPhoto = uiState.previewPhoto
                         }
 
                         AnimatedVisibility(
                             visible = uiState.previewPhoto == null,
-                            enter = EnterTransition.None,
-                            exit = ExitTransition.None
+                            enter = fadeIn(),
+                            exit = fadeOut()
                         ) {
                             Scaffold(
                                 modifier = Modifier
@@ -230,6 +236,7 @@ class MainActivity : ComponentActivity() {
                                         onPreviewPhoto = { viewModel.openPreview(it) },
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedVisibility,
+                                        scrollState = gridScrollState,
                                         modifier = Modifier.padding(innerPadding)
                                     )
                                 }
@@ -253,8 +260,8 @@ class MainActivity : ComponentActivity() {
 
                         AnimatedVisibility(
                             visible = uiState.previewPhoto != null,
-                            enter = EnterTransition.None,
-                            exit = ExitTransition.None
+                            enter = fadeIn(),
+                            exit = fadeOut()
                         ) {
                             lastPreviewPhoto?.let { photo ->
                                 MotionPhotoPreviewScreen(
@@ -297,11 +304,13 @@ fun MotionPhotoGrid(
     onPreviewPhoto: (MotionPhoto) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
+    scrollState: LazyListState,
     modifier: Modifier = Modifier
 ) {
     val groupedPhotos = buildDateGroups(photos)
 
     LazyColumn(
+        state = scrollState,
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
     ) {
@@ -429,9 +438,13 @@ private fun PhotoGridItem(
                 model = imageRequest,
                 contentDescription = null,
                 modifier = Modifier
-                    .sharedElement(
+                    .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
-                        animatedVisibilityScope = animatedVisibilityScope
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
+                            contentScale = ContentScale.Crop
+                        ),
+                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(10.dp))
                     )
                     .clip(RoundedCornerShape(10.dp))
                     .fillMaxSize(),
@@ -712,7 +725,6 @@ private fun MotionPhotoPreviewScreen(
 ) {
     val photo = currentPhoto ?: return
     if (photos.isEmpty()) return
-    BackHandler(enabled = true) { onDismiss() }
 
     val initialIndex = photos.indexOfFirst { it.id == photo.id }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }
@@ -724,6 +736,12 @@ private fun MotionPhotoPreviewScreen(
     var mediaPlayerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     val shouldPlay = togglePlay || pressPlay
+
+    BackHandler(enabled = true) {
+        togglePlay = false
+        pressPlay = false
+        onDismiss()
+    }
 
     LaunchedEffect(currentPhoto.id, photos) {
         togglePlay = false
@@ -900,36 +918,44 @@ private fun MotionPhotoPreviewScreen(
                     )
                 }
 
-                // 【第 2 层：中层】 静态图片层
-                if (!shouldPlay || !isPlayerReady) {
-                    val context = LocalContext.current
-                    val imageRequest = remember(pagePhoto.uri, pagePhoto.id) {
-                        ImageRequest.Builder(context)
-                            .data(pagePhoto.uri)
-                            .memoryCacheKey("photo_cache_${pagePhoto.id}")
-                            .placeholderMemoryCacheKey("photo_cache_${pagePhoto.id}")
-                            .build()
-                    }
+                // 【第 2 层：中层】 静态图片层（始终保留在组合树中以确保 sharedBounds 过渡动画正常）
+                val showStaticImage = !shouldPlay || !isPlayerReady
+                val imgContext = LocalContext.current
+                val imageRequest = remember(pagePhoto.uri, pagePhoto.id) {
+                    ImageRequest.Builder(imgContext)
+                        .data(pagePhoto.uri)
+                        .memoryCacheKey("photo_cache_${pagePhoto.id}")
+                        .placeholderMemoryCacheKey("photo_cache_${pagePhoto.id}")
+                        .build()
+                }
 
-                    with(sharedTransitionScope) {
-                        AsyncImage(
-                            model = imageRequest,
-                            contentDescription = pagePhoto.name,
-                            modifier = Modifier
-                                .then(
-                                    if (isActivePage) {
-                                        Modifier.sharedElement(
-                                            sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
-                                            animatedVisibilityScope = animatedVisibilityScope
-                                        )
-                                    } else {
-                                        Modifier
-                                    }
-                                )
-                                .fillMaxSize(),
-                            contentScale = ContentScale.Fit
-                        )
+                with(sharedTransitionScope) {
+                    val photoAspectRatio = if (pagePhoto.width > 0 && pagePhoto.height > 0) {
+                        pagePhoto.width.toFloat() / pagePhoto.height.toFloat()
+                    } else {
+                        1f
                     }
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = pagePhoto.name,
+                        modifier = Modifier
+                            .then(
+                                if (isActivePage) {
+                                    Modifier.sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .aspectRatio(photoAspectRatio)
+                            .alpha(if (showStaticImage) 1f else 0f),
+                        contentScale = ContentScale.Crop
+                    )
                 }
 
                 // 【第 3 层：顶层】 纯透明的手势拦截遮罩

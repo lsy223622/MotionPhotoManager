@@ -37,7 +37,9 @@ class MotionPhotoRepository(private val context: Context) {
             MediaStore.Images.Media.DISPLAY_NAME,
             MediaStore.Images.Media.SIZE,
             MediaStore.Images.Media.DATE_TAKEN,
-            MediaStore.Images.Media.DATE_MODIFIED
+            MediaStore.Images.Media.DATE_MODIFIED,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT
         )
 
         val selection = buildString {
@@ -67,6 +69,8 @@ class MotionPhotoRepository(private val context: Context) {
             val sizeColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
             val dateTakenColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
             val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+            val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
+            val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
@@ -74,6 +78,8 @@ class MotionPhotoRepository(private val context: Context) {
                 val size = cursor.getLong(sizeColumn)
                 val dateTaken = cursor.getLong(dateTakenColumn)
                 val dateModified = cursor.getLong(dateModifiedColumn)
+                val width = cursor.getInt(widthColumn)
+                val height = cursor.getInt(heightColumn)
                 val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                 val videoOffset = findVideoOffset(uri)
@@ -86,7 +92,9 @@ class MotionPhotoRepository(private val context: Context) {
                             size = size,
                             dateTaken = dateTaken,
                             dateModified = dateModified,
-                            videoOffset = videoOffset
+                            videoOffset = videoOffset,
+                            width = width,
+                            height = height
                         )
                     )
                 }
