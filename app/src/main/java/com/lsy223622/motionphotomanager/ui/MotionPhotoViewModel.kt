@@ -1,8 +1,6 @@
 package com.lsy223622.motionphotomanager.ui
 
-import android.app.Activity
 import android.app.Application
-import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore

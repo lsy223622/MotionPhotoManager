@@ -14,6 +14,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -23,11 +29,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,9 +44,11 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -48,11 +56,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -71,17 +79,19 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -89,23 +99,21 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.draw.alpha
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.MotionPhotoViewModel
 import com.lsy223622.motionphotomanager.ui.UiState
 import com.lsy223622.motionphotomanager.ui.theme.MotionPhotoManagerTheme
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -163,87 +171,116 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Box(modifier = Modifier.fillMaxSize()) {
-                    Scaffold(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(if (uiState.isProcessing) Modifier.blur(10.dp) else Modifier),
-                        topBar = {
-                            LargeTopAppBar(
-                                title = {
-                                    Column {
-                                        Text(
-                                            text = "Motion Photos",
-                                            style = MaterialTheme.typography.headlineSmall,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            text = "${uiState.photos.size} photos",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                },
-                                colors = TopAppBarDefaults.largeTopAppBarColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-                                )
-                            )
+                    SharedTransitionLayout {
+                        var lastPreviewPhoto by remember { mutableStateOf<MotionPhoto?>(null) }
+                        if (uiState.previewPhoto != null) {
+                            lastPreviewPhoto = uiState.previewPhoto
                         }
-                    ) { innerPadding ->
-                        if (uiState.photos.isEmpty() && !uiState.isLoading) {
+
+                        AnimatedVisibility(
+                            visible = uiState.previewPhoto == null,
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None
+                        ) {
+                            Scaffold(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .then(if (uiState.isProcessing) Modifier.blur(10.dp) else Modifier),
+                                topBar = {
+                                    LargeTopAppBar(
+                                        title = {
+                                            Column {
+                                                Text(
+                                                    text = "Motion Photos",
+                                                    style = MaterialTheme.typography.headlineSmall,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                                Text(
+                                                    text = "${uiState.photos.size} photos",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        },
+                                        colors = TopAppBarDefaults.topAppBarColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                                            scrolledContainerColor = Color.Unspecified,
+                                            navigationIconContentColor = Color.Unspecified,
+                                            titleContentColor = Color.Unspecified,
+                                            actionIconContentColor = Color.Unspecified
+                                        )
+                                    )
+                                }
+                            ) { innerPadding ->
+                                if (uiState.photos.isEmpty() && !uiState.isLoading) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(innerPadding),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("No motion photos found", color = Color.Gray)
+                                    }
+                                } else {
+                                    MotionPhotoGrid(
+                                        photos = uiState.photos,
+                                        selectedIds = uiState.selectedIds,
+                                        onToggleSelection = { viewModel.toggleSelection(it) },
+                                        onToggleDaySelection = { viewModel.toggleSelectionForIds(it) },
+                                        onPreviewPhoto = { viewModel.openPreview(it) },
+                                        sharedTransitionScope = this@SharedTransitionLayout,
+                                        animatedVisibilityScope = this@AnimatedVisibility,
+                                        modifier = Modifier.padding(innerPadding)
+                                    )
+                                }
+
+                                if (uiState.isLoading) {
+                                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+                            }
+                        }
+
+                        if (uiState.isProcessing) {
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(innerPadding),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("No motion photos found", color = Color.Gray)
-                            }
-                        } else {
-                            MotionPhotoGrid(
-                                photos = uiState.photos,
-                                selectedIds = uiState.selectedIds,
-                                onToggleSelection = { viewModel.toggleSelection(it) },
-                                onToggleDaySelection = { viewModel.toggleSelectionForIds(it) },
-                                onPreviewPhoto = { viewModel.openPreview(it) },
-                                modifier = Modifier.padding(innerPadding)
+                                    .background(Color.Black.copy(alpha = 0.3f))
+                                    .clickable(enabled = false) {}
                             )
                         }
 
-                        if (uiState.isLoading) {
-                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator()
+                        AnimatedVisibility(
+                            visible = uiState.previewPhoto != null,
+                            enter = EnterTransition.None,
+                            exit = ExitTransition.None
+                        ) {
+                            lastPreviewPhoto?.let { photo ->
+                                MotionPhotoPreviewScreen(
+                                    photos = uiState.photos,
+                                    currentPhoto = photo,
+                                    selectedIds = uiState.selectedIds,
+                                    previewVideoPath = uiState.previewVideoPath,
+                                    isLoading = uiState.isPreviewLoading,
+                                    onDismiss = { viewModel.closePreview() },
+                                    onToggleSelection = { viewModel.toggleSelection(it) },
+                                    onPhotoChanged = { viewModel.openPreview(it) },
+                                    sharedTransitionScope = this@SharedTransitionLayout,
+                                    animatedVisibilityScope = this@AnimatedVisibility
+                                )
                             }
                         }
-                    }
 
-                    if (uiState.isProcessing) {
-                        Box(
+                        BottomFloatingConsole(
+                            uiState = uiState,
+                            onStartProcessing = { viewModel.startProcessing(trashLauncher) },
+                            onSetConfirming = { viewModel.setConfirming(it) },
                             modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.3f))
-                                .clickable(enabled = false) {}
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
                         )
                     }
-
-                    MotionPhotoPreviewScreen(
-                        photos = uiState.photos,
-                        currentPhoto = uiState.previewPhoto,
-                        selectedIds = uiState.selectedIds,
-                        previewVideoPath = uiState.previewVideoPath,
-                        isLoading = uiState.isPreviewLoading,
-                        onDismiss = { viewModel.closePreview() },
-                        onToggleSelection = { viewModel.toggleSelection(it) },
-                        onPhotoChanged = { viewModel.openPreview(it) }
-                    )
-
-                    BottomFloatingConsole(
-                        uiState = uiState,
-                        onStartProcessing = { viewModel.startProcessing(trashLauncher) },
-                        onSetConfirming = { viewModel.setConfirming(it) },
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
-                    )
                 }
             }
         }
@@ -251,13 +288,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 fun MotionPhotoGrid(
     photos: List<MotionPhoto>,
     selectedIds: Set<Long>,
     onToggleSelection: (Long) -> Unit,
     onToggleDaySelection: (Set<Long>) -> Unit,
     onPreviewPhoto: (MotionPhoto) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     modifier: Modifier = Modifier
 ) {
     val groupedPhotos = buildDateGroups(photos)
@@ -300,6 +339,8 @@ fun MotionPhotoGrid(
                             isSelected = selectedIds.contains(photo.id),
                             onPreviewPhoto = onPreviewPhoto,
                             onToggleSelection = onToggleSelection,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -357,31 +398,52 @@ private fun DateGroupHeader(
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun PhotoGridItem(
     photo: MotionPhoto,
     isSelected: Boolean,
     onPreviewPhoto: (MotionPhoto) -> Unit,
     onToggleSelection: (Long) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    // 保持 Coil 缓存强同步
+    val imageRequest = remember(photo.uri, photo.id) {
+        ImageRequest.Builder(context)
+            .data(photo.uri)
+            .memoryCacheKey("photo_cache_${photo.id}")
+            .placeholderMemoryCacheKey("photo_cache_${photo.id}")
+            .build()
+    }
+
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clip(RoundedCornerShape(10.dp))
             .clickable { onPreviewPhoto(photo) }
     ) {
-        AsyncImage(
-            model = photo.uri,
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
+        with(sharedTransitionScope) {
+            AsyncImage(
+                model = imageRequest,
+                contentDescription = null,
+                modifier = Modifier
+                    .sharedElement(
+                        sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
+                        animatedVisibilityScope = animatedVisibilityScope
+                    )
+                    .clip(RoundedCornerShape(10.dp))
+                    .fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
 
         if (isSelected) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
             )
         }
@@ -635,7 +697,7 @@ fun BottomFloatingConsole(
 }
 
 @Composable
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 private fun MotionPhotoPreviewScreen(
     photos: List<MotionPhoto>,
     currentPhoto: MotionPhoto?,
@@ -644,7 +706,9 @@ private fun MotionPhotoPreviewScreen(
     isLoading: Boolean,
     onDismiss: () -> Unit,
     onToggleSelection: (Long) -> Unit,
-    onPhotoChanged: (MotionPhoto) -> Unit
+    onPhotoChanged: (MotionPhoto) -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val photo = currentPhoto ?: return
     if (photos.isEmpty()) return
@@ -708,12 +772,15 @@ private fun MotionPhotoPreviewScreen(
             var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
             var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
 
+            // --- 【新增】判断这是否是用户当前停留的页面 ---
+            val isCurrentVisiblePage = page == pagerState.currentPage
+
             // 1. 视觉变换 Modifier：将缩放和平移应用在最外层，让图片和视频能同步缩放
             val visualModifier = Modifier.graphicsLayer {
                 scaleX = pageScale
                 scaleY = pageScale
                 translationX = pageOffset.x
-                translationY = pageOffset.y - 18.dp.toPx()
+                translationY = pageOffset.y
             }
 
             // 2. 手势拦截 Modifier：使用开源社区级方案，彻底解决翻页冲突
@@ -782,6 +849,7 @@ private fun MotionPhotoPreviewScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .offset(y = (-18).dp)
                     .then(visualModifier),
                 contentAlignment = Alignment.Center
             ) {
@@ -834,12 +902,34 @@ private fun MotionPhotoPreviewScreen(
 
                 // 【第 2 层：中层】 静态图片层
                 if (!shouldPlay || !isPlayerReady) {
-                    AsyncImage(
-                        model = pagePhoto.uri,
-                        contentDescription = pagePhoto.name,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
-                    )
+                    val context = LocalContext.current
+                    val imageRequest = remember(pagePhoto.uri, pagePhoto.id) {
+                        ImageRequest.Builder(context)
+                            .data(pagePhoto.uri)
+                            .memoryCacheKey("photo_cache_${pagePhoto.id}")
+                            .placeholderMemoryCacheKey("photo_cache_${pagePhoto.id}")
+                            .build()
+                    }
+
+                    with(sharedTransitionScope) {
+                        AsyncImage(
+                            model = imageRequest,
+                            contentDescription = pagePhoto.name,
+                            modifier = Modifier
+                                .then(
+                                    if (isActivePage) {
+                                        Modifier.sharedElement(
+                                            sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
                 }
 
                 // 【第 3 层：顶层】 纯透明的手势拦截遮罩
