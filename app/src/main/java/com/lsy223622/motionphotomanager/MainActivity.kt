@@ -85,12 +85,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,36 +119,20 @@ import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.MotionPhotoViewModel
 import com.lsy223622.motionphotomanager.ui.UiState
 import com.lsy223622.motionphotomanager.ui.theme.MotionPhotoManagerTheme
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 private const val PREVIEW_FADE_IN_DURATION_MS = 140
-private const val PREVIEW_FADE_OUT_DURATION_MS = 110
-private const val PREVIEW_FADE_OUT_DELAY_MS = 40
-private const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 240
+private const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 260
+// 背景淡出与照片缩回动画同步
+private const val PREVIEW_FADE_OUT_DURATION_MS = PREVIEW_SHARED_BOUNDS_DURATION_MS
 
-private fun previewBoundsTransform(
-    initialBounds: Rect,
-    targetBounds: Rect,
-    startScale: Float = 1f,
-    startOffset: Offset = Offset.Zero
-) =
-    if ((targetBounds.width * targetBounds.height) > (initialBounds.width * initialBounds.height)) {
-        keyframes {
-            durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
-            lerp(initialBounds, targetBounds, 1.055f) at (PREVIEW_SHARED_BOUNDS_DURATION_MS / 2) using FastOutLinearInEasing
-            targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS using LinearOutSlowInEasing
-        }
-    } else {
-        keyframes {
-            durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
-            transformedBounds(initialBounds, startScale, startOffset) at 0 using FastOutSlowInEasing
-            targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS
-        }
-    }
-
+/**
+ * 将缩放和位移应用到 bounds，用于退出动画时从放大状态开始过渡
+ */
 private fun transformedBounds(bounds: Rect, scale: Float, offset: Offset): Rect {
     val center = bounds.center + offset
     val halfWidth = bounds.width * scale / 2f
@@ -162,6 +145,34 @@ private fun transformedBounds(bounds: Rect, scale: Float, offset: Offset): Rect 
     )
 }
 
+/**
+ * 统一的 sharedBounds 过渡动画曲线
+ * 进入时：从小到大，带一点 overshoot
+ * 退出时：从当前缩放位置平滑过渡到缩略图
+ */
+private fun previewBoundsTransform(
+    initialBounds: Rect,
+    targetBounds: Rect,
+    exitScale: Float = 1f,
+    exitOffset: Offset = Offset.Zero
+) = if ((targetBounds.width * targetBounds.height) > (initialBounds.width * initialBounds.height)) {
+    // 进入动画：Grid -> Preview（放大）
+    keyframes {
+        durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
+        lerp(initialBounds, targetBounds, 1.04f) at (PREVIEW_SHARED_BOUNDS_DURATION_MS * 55 / 100) using FastOutLinearInEasing
+        targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS using LinearOutSlowInEasing
+    }
+} else {
+    // 退出动画：Preview -> Grid（缩小）
+    // 从当前缩放/位移的位置开始过渡
+    val actualInitialBounds = transformedBounds(initialBounds, exitScale, exitOffset)
+    keyframes {
+        durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
+        actualInitialBounds at 0 using FastOutSlowInEasing
+        targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS
+    }
+}
+
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -170,9 +181,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
         )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-        }
+        window.isNavigationBarContrastEnforced = false
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
@@ -238,9 +247,9 @@ class MainActivity : ComponentActivity() {
                     SharedTransitionLayout {
                         var lastPreviewPhoto by remember { mutableStateOf<MotionPhoto?>(null) }
                         val gridScrollState = rememberLazyListState()
-                        // 共享缩放状态：让 grid 和 preview 两侧的 boundsTransform 保持同步
-                        var previewZoomScale by remember { mutableFloatStateOf(1f) }
-                        var previewZoomOffset by remember { mutableStateOf(Offset.Zero) }
+                        // 共享缩放状态：退出时让 boundsTransform 从放大位置开始动画
+                        var exitZoomScale by remember { mutableStateOf(1f) }
+                        var exitZoomOffset by remember { mutableStateOf(Offset.Zero) }
                         if (uiState.previewPhoto != null) {
                             lastPreviewPhoto = uiState.previewPhoto
                         }
@@ -311,8 +320,8 @@ class MainActivity : ComponentActivity() {
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedVisibility,
                                         scrollState = gridScrollState,
-                                        previewZoomScale = previewZoomScale,
-                                        previewZoomOffset = previewZoomOffset,
+                                        exitZoomScale = exitZoomScale,
+                                        exitZoomOffset = exitZoomOffset,
                                         modifier = Modifier.padding(innerPadding)
                                     )
                                 }
@@ -344,8 +353,7 @@ class MainActivity : ComponentActivity() {
                             ),
                             exit = fadeOut(
                                 animationSpec = tween(
-                                    durationMillis = PREVIEW_FADE_OUT_DURATION_MS - PREVIEW_FADE_OUT_DELAY_MS,
-                                    delayMillis = PREVIEW_FADE_OUT_DELAY_MS,
+                                    durationMillis = PREVIEW_FADE_OUT_DURATION_MS,
                                     easing = FastOutSlowInEasing
                                 )
                             )
@@ -360,9 +368,9 @@ class MainActivity : ComponentActivity() {
                                     onDismiss = { viewModel.closePreview() },
                                     onToggleSelection = { viewModel.toggleSelection(it) },
                                     onPhotoChanged = { viewModel.openPreview(it) },
-                                    onPreviewZoomChanged = { scale, offset ->
-                                        previewZoomScale = scale
-                                        previewZoomOffset = offset
+                                    onExitZoomChanged = { scale, offset ->
+                                        exitZoomScale = scale
+                                        exitZoomOffset = offset
                                     },
                                     sharedTransitionScope = this@SharedTransitionLayout,
                                     animatedVisibilityScope = this@AnimatedVisibility
@@ -396,8 +404,8 @@ fun MotionPhotoGrid(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     scrollState: LazyListState,
-    previewZoomScale: Float,
-    previewZoomOffset: Offset,
+    exitZoomScale: Float,
+    exitZoomOffset: Offset,
     modifier: Modifier = Modifier
 ){
     val groupedPhotos = buildDateGroups(photos)
@@ -443,8 +451,8 @@ fun MotionPhotoGrid(
                             onToggleSelection = onToggleSelection,
                             sharedTransitionScope = sharedTransitionScope,
                             animatedVisibilityScope = animatedVisibilityScope,
-                            previewZoomScale = previewZoomScale,
-                            previewZoomOffset = previewZoomOffset,
+                            exitZoomScale = exitZoomScale,
+                            exitZoomOffset = exitZoomOffset,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -484,7 +492,8 @@ private fun DateGroupHeader(
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -511,8 +520,8 @@ private fun PhotoGridItem(
     onToggleSelection: (Long) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    previewZoomScale: Float,
-    previewZoomOffset: Offset,
+    exitZoomScale: Float,
+    exitZoomOffset: Offset,
     modifier: Modifier = Modifier
 ){
     val context = LocalContext.current
@@ -542,8 +551,8 @@ private fun PhotoGridItem(
                             previewBoundsTransform(
                                 initialBounds = initialBounds,
                                 targetBounds = targetBounds,
-                                startScale = previewZoomScale,
-                                startOffset = previewZoomOffset
+                                exitScale = exitZoomScale,
+                                exitOffset = exitZoomOffset
                             )
                         },
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
@@ -825,7 +834,7 @@ private fun MotionPhotoPreviewScreen(
     onDismiss: () -> Unit,
     onToggleSelection: (Long) -> Unit,
     onPhotoChanged: (MotionPhoto) -> Unit,
-    onPreviewZoomChanged: (Float, Offset) -> Unit,
+    onExitZoomChanged: (Float, Offset) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope
 ){
@@ -842,6 +851,10 @@ private fun MotionPhotoPreviewScreen(
     var mediaPlayerRef by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
     var videoViewRef by remember { mutableStateOf<VideoView?>(null) }
     val shouldPlay = togglePlay || pressPlay
+
+    // 监听过渡动画状态
+    val isTransitionRunning = animatedVisibilityScope.transition.isRunning
+    val isExiting = animatedVisibilityScope.transition.targetState == EnterExitState.PostExit
 
     BackHandler(enabled = true) {
         togglePlay = false
@@ -888,75 +901,106 @@ private fun MotionPhotoPreviewScreen(
     ) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            // 禁用过渡动画期间的手势翻页，避免干扰 sharedBounds
+            userScrollEnabled = !isTransitionRunning
         ) { page ->
             val pagePhoto = photos[page]
             val isActivePage = pagePhoto.id == currentPhoto.id
-            var pageScale by remember(pagePhoto.id) { mutableFloatStateOf(1f) }
-            var pageOffset by remember(pagePhoto.id) { mutableStateOf(Offset.Zero) }
 
-            // 将当前活动页的缩放状态同步到父级，确保 grid 侧的 boundsTransform 能读到一致的值
-            if (isActivePage) {
-                SideEffect {
-                    onPreviewZoomChanged(pageScale, pageOffset)
-                }
+            // 核心：使用 Animatable 实现平滑的缩放/位移动画
+            val scale = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(1f) }
+            val offsetX = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(0f) }
+            val offsetY = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(0f) }
+
+            // 捕获退出时的缩放状态（只在退出开始时捕获一次）
+            var capturedExitScale by remember { mutableStateOf(1f) }
+            var capturedExitOffsetX by remember { mutableStateOf(0f) }
+            var capturedExitOffsetY by remember { mutableStateOf(0f) }
+            var hasExitStarted by remember { mutableStateOf(false) }
+
+            // 在组合期间立即捕获退出时的缩放状态（确保在 boundsTransform 调用前执行）
+            if (isExiting && isActivePage && !hasExitStarted) {
+                hasExitStarted = true
+                capturedExitScale = scale.value
+                capturedExitOffsetX = offsetX.value
+                capturedExitOffsetY = offsetY.value
+                // 传递给父级用于 Grid 侧的 boundsTransform
+                onExitZoomChanged(capturedExitScale, Offset(capturedExitOffsetX, capturedExitOffsetY))
             }
 
-            // 退出动画时，boundsTransform 已经用 transformedBounds 将缩放/平移编码进起始 Rect，
-            // 此时 graphicsLayer 必须归零，否则会与 boundsTransform 双重叠加。
-            val isExiting = animatedVisibilityScope.transition.targetState == EnterExitState.PostExit
-
-            // 1. 视觉变换 Modifier：将缩放和平移应用在最外层，让图片和视频能同步缩放
+            // 视觉变换 Modifier：退出时直接使用 1f，避免闪烁（因为缩放已经编码到 boundsTransform 中）
             val visualModifier = Modifier.graphicsLayer {
-                val effectiveScale = if (isExiting && isActivePage) 1f else pageScale
-                val effectiveOffset = if (isExiting && isActivePage) Offset.Zero else pageOffset
+                val effectiveScale = if (hasExitStarted) 1f else scale.value
+                val effectiveOffsetX = if (hasExitStarted) 0f else offsetX.value
+                val effectiveOffsetY = if (hasExitStarted) 0f else offsetY.value
                 scaleX = effectiveScale
                 scaleY = effectiveScale
-                translationX = effectiveOffset.x
-                translationY = effectiveOffset.y
+                translationX = effectiveOffsetX
+                translationY = effectiveOffsetY
             }
 
-            // 2. 手势拦截 Modifier：使用开源社区级方案，彻底解决翻页冲突
+            // 手势处理
+            val coroutineScope = rememberCoroutineScope()
             val gestureModifier = Modifier
-                .pointerInput(pagePhoto.id) {
+                .pointerInput(pagePhoto.id, isTransitionRunning) {
+                    // 过渡动画期间禁用手势
+                    if (isTransitionRunning) return@pointerInput
+
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
                         do {
                             val event = awaitPointerEvent()
-                            // 如果事件已经被外层 Pager 翻页消费了，我们就放行
                             if (event.changes.any { it.isConsumed }) continue
 
                             val zoom = event.calculateZoom()
                             val pan = event.calculatePan()
 
                             val isZooming = event.changes.size > 1
-                            val isZoomedIn = pageScale > 1f
+                            val isZoomedIn = scale.value > 1.01f
 
-                            // 【核心分流点】：只有当双指操作，或者图片被放大的时候，才拦截手势！
                             if (isZooming || isZoomedIn) {
-                                val newScale = (pageScale * zoom).coerceIn(1f, 4f)
-                                if (newScale == 1f) {
-                                    pageOffset = Offset.Zero
+                                val newScale = (scale.value * zoom).coerceIn(1f, 4f)
+                                if (newScale <= 1.01f) {
+                                    coroutineScope.launch {
+                                        scale.snapTo(1f)
+                                        offsetX.snapTo(0f)
+                                        offsetY.snapTo(0f)
+                                    }
                                 } else {
-                                    pageOffset += pan
+                                    coroutineScope.launch {
+                                        scale.snapTo(newScale)
+                                        offsetX.snapTo(offsetX.value + pan.x)
+                                        offsetY.snapTo(offsetY.value + pan.y)
+                                    }
                                 }
-                                pageScale = newScale
-
-                                // 主动接管并消费事件，阻止它传给外层的 HorizontalPager
                                 event.changes.forEach { it.consume() }
                             }
                         } while (event.changes.any { it.pressed })
+
+                        // 手势结束后，如果缩放接近 1f，则动画回弹到 1f
+                        if (scale.value < 1.1f && scale.value > 0.9f) {
+                            coroutineScope.launch {
+                                scale.animateTo(1f, tween(150))
+                                offsetX.animateTo(0f, tween(150))
+                                offsetY.animateTo(0f, tween(150))
+                            }
+                        }
                     }
                 }
-                .pointerInput(isActivePage, previewVideoPath) {
-                    // 长按播放和双击恢复逻辑保持不变，它会在底层事件放行时完美触发
+                .pointerInput(isActivePage, previewVideoPath, isTransitionRunning) {
+                    if (isTransitionRunning) return@pointerInput
+
                     detectTapGestures(
                         onDoubleTap = {
-                            if (pageScale > 1f) {
-                                pageScale = 1f
-                                pageOffset = Offset.Zero
-                            } else {
-                                pageScale = 2f
+                            coroutineScope.launch {
+                                if (scale.value > 1.1f) {
+                                    scale.animateTo(1f, tween(200))
+                                    offsetX.animateTo(0f, tween(200))
+                                    offsetY.animateTo(0f, tween(200))
+                                } else {
+                                    scale.animateTo(2f, tween(200))
+                                }
                             }
                         },
                         onPress = {
@@ -985,7 +1029,7 @@ private fun MotionPhotoPreviewScreen(
                     .offset(y = (-18).dp),
                 contentAlignment = Alignment.Center
             ) {
-                // 【第 1 层：底层】 视频层
+                // 视频层
                 if (isActivePage && previewVideoPath != null) {
                     AndroidView(
                         modifier = Modifier
@@ -995,7 +1039,6 @@ private fun MotionPhotoPreviewScreen(
                         factory = { ctx ->
                             VideoView(ctx).apply {
                                 videoViewRef = this
-                                // 彻底阉割 VideoView 的原生触摸反馈，防止它干扰 Compose
                                 isClickable = false
                                 isLongClickable = false
                                 isFocusable = false
@@ -1026,14 +1069,14 @@ private fun MotionPhotoPreviewScreen(
                             if (!shouldPlay && view.isPlaying) {
                                 runCatching {
                                     view.pause()
-                                    view.seekTo(0) // 停止时重置进度
+                                    view.seekTo(0)
                                 }
                             }
                         }
                     )
                 }
 
-                // 【第 2 层：中层】 静态图片层（始终保留在组合树中以确保 sharedBounds 过渡动画正常）
+                // 静态图片层
                 val showStaticImage = !shouldPlay || !isPlayerReady
                 val imgContext = LocalContext.current
                 val imageRequest = remember(pagePhoto.uri, pagePhoto.id) {
@@ -1063,8 +1106,8 @@ private fun MotionPhotoPreviewScreen(
                                             previewBoundsTransform(
                                                 initialBounds = initialBounds,
                                                 targetBounds = targetBounds,
-                                                startScale = pageScale,
-                                                startOffset = pageOffset
+                                                exitScale = capturedExitScale,
+                                                exitOffset = Offset(capturedExitOffsetX, capturedExitOffsetY)
                                             )
                                         },
                                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
@@ -1082,8 +1125,7 @@ private fun MotionPhotoPreviewScreen(
                     )
                 }
 
-                // 【第 3 层：顶层】 纯透明的手势拦截遮罩
-                // 它覆盖在最上面，100% 优先拿到所有的手指触摸事件，直接化解了翻页和长按失效的问题
+                // 手势拦截层
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
