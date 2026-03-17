@@ -183,7 +183,7 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
         loadPhotos()
     }
 
-    private fun requestTrash(uris: List<android.net.Uri>, intentLauncher: ActivityResultLauncher<IntentSenderRequest>) {
+    private fun requestTrash(uris: List<Uri>, intentLauncher: ActivityResultLauncher<IntentSenderRequest>) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
             val pendingIntent = if (manufacturer.contains("xiaomi")) {
