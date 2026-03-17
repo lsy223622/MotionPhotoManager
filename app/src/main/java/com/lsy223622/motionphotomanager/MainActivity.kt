@@ -2,7 +2,6 @@ package com.lsy223622.motionphotomanager
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Color as AndroidColor
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -17,15 +16,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -96,16 +93,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -124,54 +119,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.graphics.Color as AndroidColor
 
 private const val PREVIEW_FADE_IN_DURATION_MS = 140
 private const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 260
 // 背景淡出与照片缩回动画同步
 private const val PREVIEW_FADE_OUT_DURATION_MS = PREVIEW_SHARED_BOUNDS_DURATION_MS
-
-/**
- * 将缩放和位移应用到 bounds，用于退出动画时从放大状态开始过渡
- */
-private fun transformedBounds(bounds: Rect, scale: Float, offset: Offset): Rect {
-    val center = bounds.center + offset
-    val halfWidth = bounds.width * scale / 2f
-    val halfHeight = bounds.height * scale / 2f
-    return Rect(
-        left = center.x - halfWidth,
-        top = center.y - halfHeight,
-        right = center.x + halfWidth,
-        bottom = center.y + halfHeight
-    )
-}
-
-/**
- * 统一的 sharedBounds 过渡动画曲线
- * 进入时：从小到大，带一点 overshoot
- * 退出时：从当前缩放位置平滑过渡到缩略图
- */
-private fun previewBoundsTransform(
-    initialBounds: Rect,
-    targetBounds: Rect,
-    exitScale: Float = 1f,
-    exitOffset: Offset = Offset.Zero
-) = if ((targetBounds.width * targetBounds.height) > (initialBounds.width * initialBounds.height)) {
-    // 进入动画：Grid -> Preview（放大）
-    keyframes {
-        durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
-        lerp(initialBounds, targetBounds, 1.04f) at (PREVIEW_SHARED_BOUNDS_DURATION_MS * 55 / 100) using FastOutLinearInEasing
-        targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS using LinearOutSlowInEasing
-    }
-} else {
-    // 退出动画：Preview -> Grid（缩小）
-    // 从当前缩放/位移的位置开始过渡
-    val actualInitialBounds = transformedBounds(initialBounds, exitScale, exitOffset)
-    keyframes {
-        durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS
-        actualInitialBounds at 0 using FastOutSlowInEasing
-        targetBounds at PREVIEW_SHARED_BOUNDS_DURATION_MS
-    }
-}
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -247,9 +200,6 @@ class MainActivity : ComponentActivity() {
                     SharedTransitionLayout {
                         var lastPreviewPhoto by remember { mutableStateOf<MotionPhoto?>(null) }
                         val gridScrollState = rememberLazyListState()
-                        // 共享缩放状态：退出时让 boundsTransform 从放大位置开始动画
-                        var exitZoomScale by remember { mutableStateOf(1f) }
-                        var exitZoomOffset by remember { mutableStateOf(Offset.Zero) }
                         if (uiState.previewPhoto != null) {
                             lastPreviewPhoto = uiState.previewPhoto
                         }
@@ -320,8 +270,6 @@ class MainActivity : ComponentActivity() {
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedVisibility,
                                         scrollState = gridScrollState,
-                                        exitZoomScale = exitZoomScale,
-                                        exitZoomOffset = exitZoomOffset,
                                         modifier = Modifier.padding(innerPadding)
                                     )
                                 }
@@ -368,10 +316,6 @@ class MainActivity : ComponentActivity() {
                                     onDismiss = { viewModel.closePreview() },
                                     onToggleSelection = { viewModel.toggleSelection(it) },
                                     onPhotoChanged = { viewModel.openPreview(it) },
-                                    onExitZoomChanged = { scale, offset ->
-                                        exitZoomScale = scale
-                                        exitZoomOffset = offset
-                                    },
                                     sharedTransitionScope = this@SharedTransitionLayout,
                                     animatedVisibilityScope = this@AnimatedVisibility
                                 )
@@ -404,8 +348,6 @@ fun MotionPhotoGrid(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     scrollState: LazyListState,
-    exitZoomScale: Float,
-    exitZoomOffset: Offset,
     modifier: Modifier = Modifier
 ){
     val groupedPhotos = buildDateGroups(photos)
@@ -451,8 +393,6 @@ fun MotionPhotoGrid(
                             onToggleSelection = onToggleSelection,
                             sharedTransitionScope = sharedTransitionScope,
                             animatedVisibilityScope = animatedVisibilityScope,
-                            exitZoomScale = exitZoomScale,
-                            exitZoomOffset = exitZoomOffset,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -520,8 +460,6 @@ private fun PhotoGridItem(
     onToggleSelection: (Long) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
-    exitZoomScale: Float,
-    exitZoomOffset: Offset,
     modifier: Modifier = Modifier
 ){
     val context = LocalContext.current
@@ -547,12 +485,10 @@ private fun PhotoGridItem(
                     .sharedBounds(
                         sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { initialBounds, targetBounds ->
-                            previewBoundsTransform(
-                                initialBounds = initialBounds,
-                                targetBounds = targetBounds,
-                                exitScale = exitZoomScale,
-                                exitOffset = exitZoomOffset
+                        boundsTransform = { _, _ ->
+                            spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMediumLow
                             )
                         },
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
@@ -834,7 +770,6 @@ private fun MotionPhotoPreviewScreen(
     onDismiss: () -> Unit,
     onToggleSelection: (Long) -> Unit,
     onPhotoChanged: (MotionPhoto) -> Unit,
-    onExitZoomChanged: (Float, Offset) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope
 ){
@@ -854,7 +789,6 @@ private fun MotionPhotoPreviewScreen(
 
     // 监听过渡动画状态
     val isTransitionRunning = animatedVisibilityScope.transition.isRunning
-    val isExiting = animatedVisibilityScope.transition.targetState == EnterExitState.PostExit
 
     BackHandler(enabled = true) {
         togglePlay = false
@@ -908,40 +842,49 @@ private fun MotionPhotoPreviewScreen(
             val pagePhoto = photos[page]
             val isActivePage = pagePhoto.id == currentPhoto.id
 
+            // 【新增】：根据图片实际宽高计算真实比例
+            val photoAspectRatio = remember(pagePhoto.width, pagePhoto.height) {
+                if (pagePhoto.width > 0 && pagePhoto.height > 0) {
+                    pagePhoto.width.toFloat() / pagePhoto.height.toFloat()
+                } else 1f // 默认降级为 1:1，通常本地媒体库都有宽高数据
+            }
+
             // 核心：使用 Animatable 实现平滑的缩放/位移动画
             val scale = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(1f) }
             val offsetX = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(0f) }
             val offsetY = remember(pagePhoto.id) { androidx.compose.animation.core.Animatable(0f) }
 
-            // 捕获退出时的缩放状态（只在退出开始时捕获一次）
-            var capturedExitScale by remember { mutableStateOf(1f) }
-            var capturedExitOffsetX by remember { mutableStateOf(0f) }
-            var capturedExitOffsetY by remember { mutableStateOf(0f) }
-            var hasExitStarted by remember { mutableStateOf(false) }
+            // 一旦检测到开始退出，立即将缩放和偏移平滑动画回原位
+            // 这样它会与外部的 sharedBounds 动画完美融合
+            val coroutineScope = rememberCoroutineScope()
 
-            // 在组合期间立即捕获退出时的缩放状态（确保在 boundsTransform 调用前执行）
-            if (isExiting && isActivePage && !hasExitStarted) {
-                hasExitStarted = true
-                capturedExitScale = scale.value
-                capturedExitOffsetX = offsetX.value
-                capturedExitOffsetY = offsetY.value
-                // 传递给父级用于 Grid 侧的 boundsTransform
-                onExitZoomChanged(capturedExitScale, Offset(capturedExitOffsetX, capturedExitOffsetY))
-            }
+            // ✅ 修改后的 visualModifier
+            val visualModifier = Modifier
+                // 1. 将平移手势真实地反映在布局的偏移上
+                .offset { IntOffset(offsetX.value.toInt(), offsetY.value.toInt()) }
+                // 2. 将缩放手势真实地反映在布局的尺寸上
+                .layout { measurable, constraints ->
+                    // 按正常 1 倍大小测量图片
+                    val placeable = measurable.measure(constraints)
 
-            // 视觉变换 Modifier：退出时直接使用 1f，避免闪烁（因为缩放已经编码到 boundsTransform 中）
-            val visualModifier = Modifier.graphicsLayer {
-                val effectiveScale = if (hasExitStarted) 1f else scale.value
-                val effectiveOffsetX = if (hasExitStarted) 0f else offsetX.value
-                val effectiveOffsetY = if (hasExitStarted) 0f else offsetY.value
-                scaleX = effectiveScale
-                scaleY = effectiveScale
-                translationX = effectiveOffsetX
-                translationY = effectiveOffsetY
-            }
+                    // 计算放大后的真实布局尺寸
+                    val scaledWidth = (placeable.width * scale.value).toInt()
+                    val scaledHeight = (placeable.height * scale.value).toInt()
+
+                    // 向 Compose 引擎（也就是向 sharedBounds）报告这个放大的尺寸
+                    layout(scaledWidth, scaledHeight) {
+                        val x = (scaledWidth - placeable.width) / 2
+                        val y = (scaledHeight - placeable.height) / 2
+
+                        // 依然使用图层硬件加速来绘制缩放，保持高性能且不模糊
+                        placeable.placeWithLayer(x, y) {
+                            scaleX = scale.value
+                            scaleY = scale.value
+                        }
+                    }
+                }
 
             // 手势处理
-            val coroutineScope = rememberCoroutineScope()
             val gestureModifier = Modifier
                 .pointerInput(pagePhoto.id, isTransitionRunning) {
                     // 过渡动画期间禁用手势
@@ -1029,12 +972,12 @@ private fun MotionPhotoPreviewScreen(
                     .offset(y = (-18).dp),
                 contentAlignment = Alignment.Center
             ) {
-                // 视频层
+                // 1. 视频层修正
                 if (isActivePage && previewVideoPath != null) {
                     AndroidView(
                         modifier = Modifier
-                            .fillMaxSize()
                             .then(visualModifier)
+                            .aspectRatio(photoAspectRatio)
                             .alpha(if (shouldPlay && isPlayerReady) 1f else 0f),
                         factory = { ctx ->
                             VideoView(ctx).apply {
@@ -1088,11 +1031,6 @@ private fun MotionPhotoPreviewScreen(
                 }
 
                 with(sharedTransitionScope) {
-                    val photoAspectRatio = if (pagePhoto.width > 0 && pagePhoto.height > 0) {
-                        pagePhoto.width.toFloat() / pagePhoto.height.toFloat()
-                    } else {
-                        1f
-                    }
                     AsyncImage(
                         model = imageRequest,
                         contentDescription = pagePhoto.name,
@@ -1102,16 +1040,14 @@ private fun MotionPhotoPreviewScreen(
                                     Modifier.sharedBounds(
                                         sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
                                         animatedVisibilityScope = animatedVisibilityScope,
-                                        boundsTransform = { initialBounds, targetBounds ->
-                                            previewBoundsTransform(
-                                                initialBounds = initialBounds,
-                                                targetBounds = targetBounds,
-                                                exitScale = capturedExitScale,
-                                                exitOffset = Offset(capturedExitOffsetX, capturedExitOffsetY)
+                                        boundsTransform = { _, _ ->
+                                            spring(
+                                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
                                             )
                                         },
                                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
-                                            contentScale = ContentScale.Crop
+                                            contentScale = ContentScale.Fit
                                         )
                                     )
                                 } else {
@@ -1121,7 +1057,7 @@ private fun MotionPhotoPreviewScreen(
                             .then(visualModifier)
                             .aspectRatio(photoAspectRatio)
                             .alpha(if (showStaticImage) 1f else 0f),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Fit
                     )
                 }
 
