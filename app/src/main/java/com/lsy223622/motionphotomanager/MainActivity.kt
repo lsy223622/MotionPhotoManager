@@ -262,6 +262,7 @@ class MainActivity : ComponentActivity() {
                         uiState = uiState,
                         onStartProcessing = { viewModel.startProcessing(trashLauncher) },
                         onSetConfirming = { viewModel.setConfirming(it) },
+                        onPreviewPhoto = { viewModel.openPreview(it) },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)

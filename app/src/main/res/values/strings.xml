@@ -2,7 +2,7 @@
     <string name="app_name">Motion Photo Manager</string>
     
     <!-- Main Screen -->
-    <string name="motion_photos_title">Motion Photos</string>
+    <string name="motion_photos_title">Motion Photos Manager</string>
     <string name="photos_count">%d photos</string>
     <string name="no_motion_photos_found">No motion photos found</string>
     
