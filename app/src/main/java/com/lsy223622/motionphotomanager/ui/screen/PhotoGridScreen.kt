@@ -32,10 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
@@ -56,7 +58,8 @@ fun MotionPhotoGrid(
     scrollState: LazyListState,
     modifier: Modifier = Modifier
 ) {
-    val groupedPhotos = buildDateGroups(photos)
+    val dateFormat = stringResource(R.string.date_group_title_format)
+    val groupedPhotos = remember(photos, dateFormat) { buildDateGroups(photos, dateFormat) }
 
     LazyColumn(
         state = scrollState,
@@ -233,9 +236,9 @@ private data class DatePhotoGroup(
     val photos: List<MotionPhoto>
 )
 
-private fun buildDateGroups(photos: List<MotionPhoto>): List<DatePhotoGroup> {
+private fun buildDateGroups(photos: List<MotionPhoto>, titleFormat: String): List<DatePhotoGroup> {
     val keyFormatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    val titleFormatter = SimpleDateFormat("yyyy年M月d日 EEEE", Locale.getDefault())
+    val titleFormatter = SimpleDateFormat(titleFormat, Locale.getDefault())
 
     val grouped = photos
         .sortedByDescending { resolvePhotoTimestamp(it) }

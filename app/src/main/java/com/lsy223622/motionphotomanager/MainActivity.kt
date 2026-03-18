@@ -51,6 +51,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lsy223622.motionphotomanager.data.MotionPhoto
+import androidx.compose.ui.res.stringResource
 import com.lsy223622.motionphotomanager.ui.MotionPhotoViewModel
 import com.lsy223622.motionphotomanager.ui.components.BottomFloatingConsole
 import com.lsy223622.motionphotomanager.ui.screen.MotionPhotoGrid
@@ -85,10 +86,10 @@ class MainActivity : ComponentActivity() {
                 ) { result ->
                     if (result.resultCode == RESULT_OK) {
                         viewModel.onTrashRequestResult(granted = true)
-                        Toast.makeText(context, "Original photos moved to trash", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, R.string.original_photos_trashed, Toast.LENGTH_SHORT).show()
                     } else {
                         viewModel.onTrashRequestResult(granted = false)
-                        Toast.makeText(context, "Converted photos kept. Original photos were not moved to trash.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, R.string.original_photos_not_trashed, Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
                     if (allGranted) {
                         viewModel.loadPhotos()
                     } else {
-                        Toast.makeText(context, "Permission denied. Please grant permission in settings.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, R.string.permission_denied, Toast.LENGTH_LONG).show()
                     }
                 }
 
@@ -159,17 +160,17 @@ class MainActivity : ComponentActivity() {
                                     .then(if (uiState.isProcessing) Modifier.blur(10.dp) else Modifier),
                                 containerColor = Color.Transparent,
                                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                                topBar = {
+                                    topBar = {
                                     LargeTopAppBar(
                                         title = {
                                             Column {
                                                 Text(
-                                                    text = "Motion Photos",
+                                                    text = stringResource(R.string.motion_photos_title),
                                                     style = MaterialTheme.typography.headlineSmall,
                                                     fontWeight = FontWeight.SemiBold
                                                 )
                                                 Text(
-                                                    text = "${uiState.photos.size} photos",
+                                                    text = stringResource(R.string.photos_count, uiState.photos.size),
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -192,7 +193,7 @@ class MainActivity : ComponentActivity() {
                                             .padding(innerPadding),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Text("No motion photos found", color = Color.Gray)
+                                        Text(stringResource(R.string.no_motion_photos_found), color = Color.Gray)
                                     }
                                 } else {
                                     MotionPhotoGrid(

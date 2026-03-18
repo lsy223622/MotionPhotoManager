@@ -1,3 +1,25 @@
 <resources>
     <string name="app_name">Motion Photo Manager</string>
+    
+    <!-- Main Screen -->
+    <string name="motion_photos_title">Motion Photos</string>
+    <string name="photos_count">%d photos</string>
+    <string name="no_motion_photos_found">No motion photos found</string>
+    
+    <!-- Permission & Toast Messages -->
+    <string name="permission_denied">Permission denied. Please grant permission in settings.</string>
+    <string name="original_photos_trashed">Original photos moved to trash</string>
+    <string name="original_photos_not_trashed">Converted photos kept. Original photos were not moved to trash.</string>
+    
+    <!-- Bottom Console -->
+    <string name="select_photos">Select photos</string>
+    <string name="selected_count">Selected %d</string>
+    <string name="processing_progress">Processing (%1$d/%2$d)</string>
+    <string name="save_mb">Save ~%.1f MB</string>
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="remove_motion">Remove Motion</string>
+    
+    <!-- Date Format -->
+    <string name="date_group_title_format">EEEE, MMMM d, yyyy</string>
 </resources>

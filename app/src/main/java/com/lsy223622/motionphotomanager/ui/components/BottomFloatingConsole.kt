@@ -30,12 +30,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.animateDpAsState
+import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.ui.UiState
-import java.util.Locale
 
 @Composable
 fun BottomFloatingConsole(
@@ -77,7 +78,7 @@ fun BottomFloatingConsole(
                 ) {
                     if (uiState.isProcessing) {
                         Text(
-                            "Processing (${uiState.progress}/${uiState.totalToProcess})",
+                            stringResource(R.string.processing_progress, uiState.progress, uiState.totalToProcess),
                             fontWeight = FontWeight.Bold
                         )
                         LinearProgressIndicator(
@@ -91,11 +92,11 @@ fun BottomFloatingConsole(
                     } else {
                         val totalSavedMb = uiState.selectedSavingBytes.toDouble() / (1024.0 * 1024.0)
                         Text(
-                            "Selected ${uiState.selectedIds.size}",
+                            stringResource(R.string.selected_count, uiState.selectedIds.size),
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Save ~${String.format(Locale.US, "%.1f", totalSavedMb)} MB",
+                            stringResource(R.string.save_mb, totalSavedMb),
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium
                         )
@@ -112,7 +113,7 @@ fun BottomFloatingConsole(
             ) {
                 if (!isSelecting && !uiState.isProcessing) {
                     Text(
-                        "Select photos",
+                        stringResource(R.string.select_photos),
                         modifier = Modifier.padding(start = 16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -138,14 +139,14 @@ fun BottomFloatingConsole(
                                     modifier = Modifier.padding(end = 8.dp),
                                     shape = RoundedCornerShape(25.dp)
                                 ) {
-                                    Text("Cancel", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    Text(stringResource(R.string.cancel), color = MaterialTheme.colorScheme.onSecondaryContainer)
                                 }
                                 Button(
                                     onClick = onStartProcessing,
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                     shape = RoundedCornerShape(25.dp)
                                 ) {
-                                    Text("Confirm")
+                                    Text(stringResource(R.string.confirm))
                                 }
                             }
                         }
@@ -156,7 +157,7 @@ fun BottomFloatingConsole(
                                 shape = RoundedCornerShape(25.dp),
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
                             ) {
-                                Text("Remove Motion", fontSize = 16.sp)
+                                Text(stringResource(R.string.remove_motion), fontSize = 16.sp)
                             }
                         }
 
@@ -176,7 +177,7 @@ fun BottomFloatingConsole(
                                 shape = RoundedCornerShape(25.dp),
                                 contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
                             ) {
-                                Text("Remove Motion")
+                                Text(stringResource(R.string.remove_motion))
                             }
                         }
                     }

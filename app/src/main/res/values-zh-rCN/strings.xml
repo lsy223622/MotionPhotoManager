@@ -1,0 +1,25 @@
+<resources>
+    <string name="app_name">动态照片管理器</string>
+    
+    <!-- Main Screen -->
+    <string name="motion_photos_title">动态照片</string>
+    <string name="photos_count">%d 张照片</string>
+    <string name="no_motion_photos_found">未找到动态照片</string>
+    
+    <!-- Permission & Toast Messages -->
+    <string name="permission_denied">权限被拒绝，请在设置中授予权限。</string>
+    <string name="original_photos_trashed">原始照片已移至回收站</string>
+    <string name="original_photos_not_trashed">已保留转换后的照片，原始照片未移至回收站。</string>
+    
+    <!-- Bottom Console -->
+    <string name="select_photos">选择照片</string>
+    <string name="selected_count">已选择 %d 项</string>
+    <string name="processing_progress">处理中 (%1$d/%2$d)</string>
+    <string name="save_mb">节省约 %.1f MB</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">确认</string>
+    <string name="remove_motion">移除动态</string>
+    
+    <!-- Date Format -->
+    <string name="date_group_title_format">yyyy年M月d日 EEEE</string>
+</resources>
