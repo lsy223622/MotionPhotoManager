@@ -64,8 +64,12 @@ import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 internal const val PREVIEW_FADE_IN_DURATION_MS = 140
 internal const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 260
@@ -88,6 +92,28 @@ internal fun MotionPhotoPreviewScreen(
 ) {
     val photo = currentPhoto ?: return
     if (photos.isEmpty()) return
+
+    // 预览页面状态栏颜色控制
+    val view = LocalView.current
+    val darkTheme = isSystemInDarkTheme()
+    val window = remember { (view.context as Activity).window }
+    val insetsController = remember { WindowCompat.getInsetsController(window, view) }
+    
+    // 进入预览时设置浅色图标（白色，在黑色背景上可见）
+    LaunchedEffect(Unit) {
+        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightNavigationBars = false
+    }
+    
+    // 监听退出动画：当 AnimatedVisibility 开始退出动画时立即恢复状态栏颜色
+    val isExiting = animatedVisibilityScope.transition.targetState != androidx.compose.animation.EnterExitState.Visible
+    LaunchedEffect(isExiting) {
+        if (isExiting) {
+            // 退出动画开始时立即恢复状态栏颜色
+            insetsController.isAppearanceLightStatusBars = !darkTheme
+            insetsController.isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
 
     val initialIndex = photos.indexOfFirst { it.id == photo.id }.coerceAtLeast(0)
     val pagerState = rememberPagerState(initialPage = initialIndex) { photos.size }

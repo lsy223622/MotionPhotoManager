@@ -178,7 +178,7 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun onTrashRequestResult(granted: Boolean) {
+    fun onTrashRequestResult() {
         pendingTrashUris = emptyList()
         loadPhotos()
     }

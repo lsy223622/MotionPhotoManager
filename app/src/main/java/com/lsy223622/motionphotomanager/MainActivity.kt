@@ -48,7 +48,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import androidx.compose.ui.res.stringResource
@@ -66,15 +65,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+            statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
         )
         window.isNavigationBarContrastEnforced = false
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            isAppearanceLightNavigationBars = false
-        }
         setContent {
             MotionPhotoManagerTheme {
                 val viewModel: MotionPhotoViewModel = viewModel()
@@ -85,10 +80,10 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.StartIntentSenderForResult()
                 ) { result ->
                     if (result.resultCode == RESULT_OK) {
-                        viewModel.onTrashRequestResult(granted = true)
+                        viewModel.onTrashRequestResult()
                         Toast.makeText(context, R.string.original_photos_trashed, Toast.LENGTH_SHORT).show()
                     } else {
-                        viewModel.onTrashRequestResult(granted = false)
+                        viewModel.onTrashRequestResult()
                         Toast.makeText(context, R.string.original_photos_not_trashed, Toast.LENGTH_LONG).show()
                     }
                 }

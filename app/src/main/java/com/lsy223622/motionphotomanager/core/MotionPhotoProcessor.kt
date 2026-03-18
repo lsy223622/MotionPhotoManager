@@ -7,7 +7,7 @@ import java.io.OutputStream
 import kotlin.text.Charsets
 
 object MotionPhotoProcessor {
-    private const val tag = "MotionPhotoProcessor"
+    private const val TAG = "MotionPhotoProcessor"
 
     /**
      * Extracts the static image from a motion photo.
@@ -45,7 +45,7 @@ object MotionPhotoProcessor {
             outputStream.write(sanitized)
             return true
         } catch (e: Exception) {
-            Log.e(tag, "Error extracting static image", e)
+            Log.e(TAG, "Error extracting static image", e)
             return false
         }
     }
@@ -84,7 +84,7 @@ object MotionPhotoProcessor {
                     for (k in 0..11) {
                         imageData[i + k] = 0x00
                     }
-                    Log.d(tag, "成功抹除小米私有 EXIF 动态标志 0x8897，位于偏移量: $i")
+                    Log.d(TAG, "成功抹除小米私有 EXIF 动态标志 0x8897，位于偏移量: $i")
                 }
                 i++
             }
