@@ -15,7 +15,7 @@
     <string name="select_photos">Select photos</string>
     <string name="selected_count">Selected %d</string>
     <string name="processing_progress">Processing (%1$d/%2$d)</string>
-    <string name="save_mb">Save ~%.1f MB</string>
+    <string name="save_mb">-%.1f MB</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
     <string name="remove_motion">Remove Motion</string>
