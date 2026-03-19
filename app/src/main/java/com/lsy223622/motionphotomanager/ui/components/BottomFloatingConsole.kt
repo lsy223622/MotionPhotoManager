@@ -19,20 +19,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,8 +42,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -58,8 +57,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -68,6 +67,7 @@ import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.UiState
 import kotlinx.coroutines.delay
+import sv.lib.squircleshape.SquircleShape
 
 private data class AnimatedThumbnailItem(
     val photo: MotionPhoto,
@@ -212,7 +212,7 @@ fun BottomFloatingConsole(
         modifier = modifier
             .fillMaxWidth()
             .height(consoleHeight),
-        shape = RoundedCornerShape(40.dp),
+        shape = SquircleShape(40.dp, smoothing = 20),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 8.dp,
         shadowElevation = 8.dp
@@ -394,7 +394,7 @@ fun BottomFloatingConsole(
                                                     contentDescription = null,
                                                     modifier = Modifier
                                                         .size(44.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
+                                                        .clip(SquircleShape(8.dp, smoothing = 20))
                                                         .clickable { onPreviewPhoto(item.photo) },
                                                     contentScale = ContentScale.Crop
                                                 )
@@ -545,7 +545,7 @@ fun BottomFloatingConsole(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .alpha(cancelButtonAlpha),
-                                        shape = RoundedCornerShape(25.dp),
+                                        shape = SquircleShape(25.dp, smoothing = 20),
                                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
@@ -592,7 +592,7 @@ fun BottomFloatingConsole(
                                         disabledContentColor = actionButtonContentColor
                                     ),
                                     modifier = Modifier.fillMaxSize(),
-                                    shape = RoundedCornerShape(25.dp),
+                                    shape = SquircleShape(25.dp, smoothing = 20),
                                     contentPadding = if (uiState.isConfirming) {
                                         PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                                     } else {

@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,6 +40,7 @@ import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
+import sv.lib.squircleshape.SquircleShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -202,9 +202,9 @@ private fun PhotoGridItem(
                         resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
                             contentScale = ContentScale.Crop
                         ),
-                        clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(10.dp))
+                        clipInOverlayDuringTransition = OverlayClip(SquircleShape(10.dp, smoothing = 20))
                     )
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(SquircleShape(10.dp, smoothing = 20))
                     .fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
@@ -214,7 +214,7 @@ private fun PhotoGridItem(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(SquircleShape(10.dp, smoothing = 20))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
             )
         }
