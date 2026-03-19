@@ -211,6 +211,29 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
+                        AnimatedVisibility(
+                            modifier = Modifier.zIndex(1.5f),
+                            visible = uiState.previewPhoto != null,
+                            enter = fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_IN_DURATION_MS,
+                                    easing = FastOutSlowInEasing
+                                )
+                            ),
+                            exit = fadeOut(
+                                animationSpec = tween(
+                                    durationMillis = PREVIEW_FADE_OUT_DURATION_MS,
+                                    easing = FastOutLinearInEasing
+                                )
+                            )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black)
+                            )
+                        }
+
                         if (uiState.isProcessing) {
                             Box(
                                 modifier = Modifier
@@ -221,7 +244,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         AnimatedVisibility(
-                            modifier = Modifier.zIndex(if (uiState.previewPhoto != null) 1f else -1f),
+                            modifier = Modifier.zIndex(if (uiState.previewPhoto != null) 2f else -1f),
                             visible = uiState.previewPhoto != null,
                             enter = fadeIn(
                                 animationSpec = tween(
