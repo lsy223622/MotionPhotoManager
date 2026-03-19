@@ -2,9 +2,13 @@ package com.lsy223622.motionphotomanager.ui.components
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +34,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +54,11 @@ import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.UiState
 
+private data class AnimatedThumbnailItem(
+    val photo: MotionPhoto,
+    val visibilityState: MutableTransitionState<Boolean>
+)
+
 @Composable
 fun BottomFloatingConsole(
     uiState: UiState,
@@ -61,6 +72,7 @@ fun BottomFloatingConsole(
         targetValue = if (isSelecting || uiState.isProcessing) 140.dp else 70.dp,
         label = "ConsoleHeight"
     )
+    val animatedThumbnailItems = remember { mutableStateListOf<AnimatedThumbnailItem>() }
 
     Surface(
         modifier = modifier
@@ -105,6 +117,37 @@ fun BottomFloatingConsole(
                         val selectedPhotos = remember(uiState.photos, uiState.selectedIds) {
                             uiState.photos.filter { it.id in uiState.selectedIds }
                         }
+                        LaunchedEffect(selectedPhotos) {
+                            val selectedIds = selectedPhotos.map { it.id }.toSet()
+                            val selectedOrder = selectedPhotos.mapIndexed { index, photo -> photo.id to index }.toMap()
+
+                            selectedPhotos.forEach { photo ->
+                                val existingIndex = animatedThumbnailItems.indexOfFirst { it.photo.id == photo.id }
+                                if (existingIndex >= 0) {
+                                    animatedThumbnailItems[existingIndex] =
+                                        animatedThumbnailItems[existingIndex].copy(photo = photo)
+                                    animatedThumbnailItems[existingIndex].visibilityState.targetState = true
+                                } else {
+                                    animatedThumbnailItems += AnimatedThumbnailItem(
+                                        photo = photo,
+                                        visibilityState = MutableTransitionState(false).apply {
+                                            targetState = true
+                                        }
+                                    )
+                                }
+                            }
+
+                            animatedThumbnailItems.forEach { item ->
+                                if (item.photo.id !in selectedIds) {
+                                    item.visibilityState.targetState = false
+                                }
+                            }
+
+                            val currentOrder = animatedThumbnailItems.mapIndexed { index, item -> item.photo.id to index }.toMap()
+                            animatedThumbnailItems.sortBy { item ->
+                                selectedOrder[item.photo.id] ?: (selectedPhotos.size + (currentOrder[item.photo.id] ?: 0))
+                            }
+                        }
                         val context = LocalContext.current
                         
                         LazyRow(
@@ -112,23 +155,42 @@ fun BottomFloatingConsole(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             contentPadding = PaddingValues(end = 16.dp)
                         ) {
-                            items(selectedPhotos, key = { it.id }) { photo ->
-                                val imageRequest = remember(photo.uri, photo.id) {
+                            items(animatedThumbnailItems, key = { it.photo.id }) { item ->
+                                LaunchedEffect(item.visibilityState.isIdle, item.visibilityState.currentState) {
+                                    if (item.visibilityState.isIdle && !item.visibilityState.currentState) {
+                                        animatedThumbnailItems.removeAll { it.photo.id == item.photo.id }
+                                    }
+                                }
+                                val imageRequest = remember(item.photo.uri, item.photo.id) {
                                     ImageRequest.Builder(context)
-                                        .data(photo.uri)
-                                        .memoryCacheKey("photo_cache_${photo.id}")
-                                        .placeholderMemoryCacheKey("photo_cache_${photo.id}")
+                                        .data(item.photo.uri)
+                                        .memoryCacheKey("photo_cache_${item.photo.id}")
+                                        .placeholderMemoryCacheKey("photo_cache_${item.photo.id}")
                                         .build()
                                 }
-                                AsyncImage(
-                                    model = imageRequest,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onPreviewPhoto(photo) },
-                                    contentScale = ContentScale.Crop
-                                )
+                                AnimatedVisibility(
+                                    visibleState = item.visibilityState,
+                                    enter = fadeIn(animationSpec = tween(durationMillis = 180)) +
+                                        scaleIn(
+                                            initialScale = 0.88f,
+                                            animationSpec = tween(durationMillis = 180)
+                                        ),
+                                    exit = fadeOut(animationSpec = tween(durationMillis = 140)) +
+                                        scaleOut(
+                                            targetScale = 0.88f,
+                                            animationSpec = tween(durationMillis = 140)
+                                        )
+                                ) {
+                                    AsyncImage(
+                                        model = imageRequest,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onPreviewPhoto(item.photo) },
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
                             }
                         }
                         
