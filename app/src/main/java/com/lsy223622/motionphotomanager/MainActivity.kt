@@ -12,8 +12,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -135,17 +138,13 @@ class MainActivity : ComponentActivity() {
                         }
 
                         AnimatedVisibility(
+                            modifier = Modifier.zIndex(if (uiState.previewPhoto == null) 1f else 0f),
                             visible = uiState.previewPhoto == null,
-                            enter = fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = PREVIEW_FADE_IN_DURATION_MS,
-                                    easing = FastOutSlowInEasing
-                                )
-                            ),
+                            enter = EnterTransition.None,
                             exit = fadeOut(
                                 animationSpec = tween(
                                     durationMillis = PREVIEW_FADE_OUT_DURATION_MS,
-                                    easing = FastOutSlowInEasing
+                                    easing = FastOutLinearInEasing
                                 )
                             )
                         ) {
@@ -222,6 +221,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                         AnimatedVisibility(
+                            modifier = Modifier.zIndex(if (uiState.previewPhoto != null) 1f else -1f),
                             visible = uiState.previewPhoto != null,
                             enter = fadeIn(
                                 animationSpec = tween(
@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity() {
                             exit = fadeOut(
                                 animationSpec = tween(
                                     durationMillis = PREVIEW_FADE_OUT_DURATION_MS,
-                                    easing = FastOutSlowInEasing
+                                    easing = FastOutLinearInEasing
                                 )
                             )
                         ) {

@@ -1,10 +1,13 @@
 package com.lsy223622.motionphotomanager.ui.screen
 
+import android.app.Activity
 import android.widget.VideoView
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -15,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +26,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -53,10 +58,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lsy223622.motionphotomanager.data.MotionPhoto
@@ -64,17 +71,11 @@ import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import android.app.Activity
-import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.offset
-import androidx.compose.ui.platform.LocalView
-import androidx.core.view.WindowCompat
 
 internal const val PREVIEW_FADE_IN_DURATION_MS = 140
 internal const val PREVIEW_SHARED_BOUNDS_DURATION_MS = 260
-// 背景淡出与照片缩回动画同步
-internal const val PREVIEW_FADE_OUT_DURATION_MS = PREVIEW_SHARED_BOUNDS_DURATION_MS
+internal const val PREVIEW_EXIT_BOUNDS_DURATION_MS = 220
+internal const val PREVIEW_FADE_OUT_DURATION_MS = PREVIEW_EXIT_BOUNDS_DURATION_MS
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
@@ -107,6 +108,7 @@ internal fun MotionPhotoPreviewScreen(
     
     // 监听退出动画：当 AnimatedVisibility 开始退出动画时立即恢复状态栏颜色
     val isExiting = animatedVisibilityScope.transition.targetState != androidx.compose.animation.EnterExitState.Visible
+    val useExitBoundsTransform = isExiting
     LaunchedEffect(isExiting) {
         if (isExiting) {
             // 退出动画开始时立即恢复状态栏颜色
@@ -129,7 +131,7 @@ internal fun MotionPhotoPreviewScreen(
     // 监听过渡动画状态
     val isTransitionRunning = animatedVisibilityScope.transition.isRunning
 
-    BackHandler(enabled = true) {
+    BackHandler(enabled = !isExiting) {
         togglePlay = false
         onDismiss()
     }
@@ -176,7 +178,7 @@ internal fun MotionPhotoPreviewScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
             // 禁用过渡动画期间的手势翻页，避免干扰 sharedBounds
-            userScrollEnabled = !isTransitionRunning
+            userScrollEnabled = !isTransitionRunning && !isExiting
         ) { page ->
             val pagePhoto = photos[page]
             val isActivePage = pagePhoto.id == currentPhoto.id
@@ -212,8 +214,8 @@ internal fun MotionPhotoPreviewScreen(
                 }
 
             val gestureModifier = Modifier
-                .pointerInput(pagePhoto.id, isTransitionRunning) {
-                    if (isTransitionRunning) return@pointerInput
+                .pointerInput(pagePhoto.id, isTransitionRunning, isExiting) {
+                    if (isTransitionRunning || isExiting) return@pointerInput
 
                     awaitEachGesture {
                         awaitFirstDown(requireUnconsumed = false)
@@ -255,8 +257,8 @@ internal fun MotionPhotoPreviewScreen(
                         }
                     }
                 }
-                .pointerInput(isActivePage, previewVideoPath, isTransitionRunning) {
-                    if (isTransitionRunning) return@pointerInput
+                .pointerInput(isActivePage, previewVideoPath, isTransitionRunning, isExiting) {
+                    if (isTransitionRunning || isExiting) return@pointerInput
 
                     detectTapGestures(
                         onDoubleTap = {
@@ -345,132 +347,173 @@ internal fun MotionPhotoPreviewScreen(
 
                 // 静态图片层
                 val showStaticImage = !shouldPlay || !isPlayerReady
-                val imgContext = LocalContext.current
-                val imageRequest = remember(pagePhoto.uri, pagePhoto.id) {
-                    ImageRequest.Builder(imgContext)
-                        .data(pagePhoto.uri)
-                        .memoryCacheKey("photo_cache_${pagePhoto.id}")
-                        .placeholderMemoryCacheKey("photo_cache_${pagePhoto.id}")
-                        .build()
-                }
-
-                with(sharedTransitionScope) {
-                    AsyncImage(
-                        model = imageRequest,
-                        contentDescription = pagePhoto.name,
-                        modifier = Modifier
-                            .then(
-                                if (isActivePage) {
-                                    Modifier.sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "photo_${pagePhoto.id}"),
-                                        animatedVisibilityScope = animatedVisibilityScope,
-                                        boundsTransform = { _, _ ->
-                                            spring(
-                                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                                stiffness = Spring.StiffnessMediumLow
-                                            )
-                                        },
-                                        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
-                                            contentScale = ContentScale.Fit
-                                        )
-                                    )
-                                } else {
-                                    Modifier
-                                }
-                            )
-                            .then(visualModifier)
-                            .aspectRatio(photoAspectRatio)
-                            .alpha(if (showStaticImage) 1f else 0f),
-                        contentScale = ContentScale.Fit
-                    )
-                }
+                PreviewSharedImage(
+                    photo = pagePhoto,
+                    photoAspectRatio = photoAspectRatio,
+                    isActivePage = isActivePage,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    visualModifier = visualModifier,
+                    useExitBoundsTransform = useExitBoundsTransform,
+                    alpha = if (showStaticImage) 1f else 0f
+                )
 
                 // 手势拦截层
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .then(gestureModifier)
-                )
+                if (!isExiting) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(gestureModifier)
+                    )
+                }
             }
         }
 
-        if (isLoading) {
+        if (isLoading && !isExiting) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         }
 
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        if (!isExiting) {
             Row(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = activePhoto.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${pagerState.currentPage + 1} / ${photos.size}",
-                        color = Color.White.copy(alpha = 0.75f),
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(start = 8.dp)
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (previewVideoPath != null && activePhoto.id == currentPhoto.id) {
-                                togglePlay = !togglePlay
-                            }
-                        },
-                        modifier = Modifier.size(38.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (shouldPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (shouldPlay) "Stop video" else "Play video",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = activePhoto.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${pagerState.currentPage + 1} / ${photos.size}",
+                            color = Color.White.copy(alpha = 0.75f),
+                            style = MaterialTheme.typography.labelSmall
                         )
                     }
 
-                    IconButton(
-                        onClick = { isMuted = !isMuted },
-                        modifier = Modifier.size(38.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(start = 8.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = if (isMuted) "Unmute video" else "Mute video",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                        IconButton(
+                            onClick = {
+                                if (previewVideoPath != null && activePhoto.id == currentPhoto.id) {
+                                    togglePlay = !togglePlay
+                                }
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (shouldPlay) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (shouldPlay) "Stop video" else "Play video",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
 
-                    Box(
-                        modifier = Modifier.size(38.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularSelectionCheckbox(
-                            state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
-                            onClick = { onToggleSelection(activePhoto.id) }
-                        )
+                        IconButton(
+                            onClick = { isMuted = !isMuted },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                                contentDescription = if (isMuted) "Unmute video" else "Mute video",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier.size(38.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularSelectionCheckbox(
+                                state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
+                                onClick = { onToggleSelection(activePhoto.id) }
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun PreviewSharedImage(
+    photo: MotionPhoto,
+    photoAspectRatio: Float,
+    isActivePage: Boolean,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    visualModifier: Modifier,
+    useExitBoundsTransform: Boolean,
+    alpha: Float
+) {
+    val imgContext = LocalContext.current
+    val imageRequest = remember(photo.uri, photo.id) {
+        ImageRequest.Builder(imgContext)
+            .data(photo.uri)
+            .memoryCacheKey("photo_cache_${photo.id}")
+            .placeholderMemoryCacheKey("photo_cache_${photo.id}")
+            .build()
+    }
+
+    with(sharedTransitionScope) {
+        Box(
+            modifier = Modifier
+                .then(visualModifier)
+                .aspectRatio(photoAspectRatio)
+                .alpha(alpha)
+        ) {
+            Box(
+                modifier = Modifier
+                .then(
+                    if (isActivePage) {
+                        Modifier.sharedElement(
+                            sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            boundsTransform = { _, _ ->
+                                if (useExitBoundsTransform) {
+                                    tween(
+                                        durationMillis = PREVIEW_EXIT_BOUNDS_DURATION_MS,
+                                        easing = FastOutLinearInEasing
+                                    )
+                                } else {
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioNoBouncy,
+                                        stiffness = Spring.StiffnessMediumLow
+                                    )
+                                }
+                            }
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+                .fillMaxSize()
+            ) {
+                AsyncImage(
+                    model = imageRequest,
+                    contentDescription = photo.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
             }
         }
     }

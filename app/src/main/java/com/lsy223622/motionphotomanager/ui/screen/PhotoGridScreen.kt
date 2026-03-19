@@ -186,11 +186,9 @@ private fun PhotoGridItem(
             .clickable { onPreviewPhoto(photo) }
     ) {
         with(sharedTransitionScope) {
-            AsyncImage(
-                model = imageRequest,
-                contentDescription = null,
+            Box(
                 modifier = Modifier
-                    .sharedBounds(
+                    .sharedElement(
                         sharedContentState = rememberSharedContentState(key = "photo_${photo.id}"),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = { _, _ ->
@@ -199,15 +197,18 @@ private fun PhotoGridItem(
                                 stiffness = Spring.StiffnessMediumLow
                             )
                         },
-                        resizeMode = SharedTransitionScope.ResizeMode.scaleToBounds(
-                            contentScale = ContentScale.Crop
-                        ),
                         clipInOverlayDuringTransition = OverlayClip(SquircleShape(10.dp, smoothing = 20))
                     )
                     .clip(SquircleShape(10.dp, smoothing = 20))
-                    .fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
+                    .fillMaxSize()
+            ) {
+                AsyncImage(
+                    model = imageRequest,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
 
         if (isSelected) {
