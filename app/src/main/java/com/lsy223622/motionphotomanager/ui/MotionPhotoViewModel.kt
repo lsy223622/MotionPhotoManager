@@ -24,6 +24,10 @@ data class UiState(
     val selectedIds: Set<Long> = emptySet(),
     val selectedSavingBytes: Long = 0L,
     val isProcessing: Boolean = false,
+    val processingPhotoIds: List<Long> = emptyList(),
+    val currentProcessingPhotoId: Long? = null,
+    val processedSavingBytes: Long = 0L,
+    val isStopRequested: Boolean = false,
     val progress: Int = 0,
     val totalToProcess: Int = 0,
     val isConfirming: Boolean = false,
@@ -138,18 +142,48 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
         val selectedPhotos = _uiState.value.photos.filter { it.id in _uiState.value.selectedIds }
         if (selectedPhotos.isEmpty()) return
 
-        _uiState.update { it.copy(isProcessing = true, progress = 0, totalToProcess = selectedPhotos.size) }
+        _uiState.update {
+            it.copy(
+                isProcessing = true,
+                processingPhotoIds = selectedPhotos.map { photo -> photo.id },
+                currentProcessingPhotoId = selectedPhotos.firstOrNull()?.id,
+                processedSavingBytes = 0L,
+                isStopRequested = false,
+                progress = 0,
+                totalToProcess = selectedPhotos.size
+            )
+        }
 
         viewModelScope.launch {
             runCatching {
                 val successfulUris = mutableListOf<Uri>()
+                var processedSavingBytes = 0L
 
-                selectedPhotos.forEachIndexed { index, photo ->
+                for (photo in selectedPhotos) {
+                    if (_uiState.value.isStopRequested) break
+
+                    _uiState.update { state ->
+                        state.copy(currentProcessingPhotoId = photo.id)
+                    }
+
                     val success = repository.compactPhoto(photo)
                     if (success) {
                         successfulUris.add(photo.uri)
+                        processedSavingBytes += photo.videoOffset.coerceAtLeast(0L)
                     }
-                    _uiState.update { it.copy(progress = index + 1) }
+
+                    val stopRequested = _uiState.value.isStopRequested
+                    _uiState.update { state ->
+                        val remainingProcessingIds = state.processingPhotoIds.filterNot { it == photo.id }
+                        state.copy(
+                            processingPhotoIds = remainingProcessingIds,
+                            currentProcessingPhotoId = if (stopRequested) null else remainingProcessingIds.firstOrNull(),
+                            processedSavingBytes = processedSavingBytes,
+                            progress = state.progress + 1
+                        )
+                    }
+
+                    if (stopRequested) break
                 }
 
                 // After processing, request to trash the original photos
@@ -170,11 +204,23 @@ class MotionPhotoViewModel(application: Application) : AndroidViewModel(applicat
             _uiState.update {
                 it.copy(
                     isProcessing = false,
+                    processingPhotoIds = emptyList(),
+                    currentProcessingPhotoId = null,
+                    processedSavingBytes = 0L,
+                    isStopRequested = false,
+                    progress = 0,
+                    totalToProcess = 0,
                     selectedIds = emptySet(),
                     selectedSavingBytes = 0L,
                     isConfirming = false
                 )
             }
+        }
+    }
+
+    fun requestStopProcessing() {
+        _uiState.update { state ->
+            if (!state.isProcessing) state else state.copy(isStopRequested = true)
         }
     }
 

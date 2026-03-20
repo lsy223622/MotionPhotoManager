@@ -15,6 +15,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,11 +32,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -78,49 +76,66 @@ private data class AnimatedThumbnailItem(
 fun BottomFloatingConsole(
     uiState: UiState,
     onStartProcessing: () -> Unit,
+    onStopProcessing: () -> Unit,
     onSetConfirming: (Boolean) -> Unit,
     onPreviewPhoto: (MotionPhoto) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val isSelecting = uiState.selectedIds.isNotEmpty() && !uiState.isProcessing
+    val showExpandedConsole = isSelecting || uiState.isProcessing
     val bottomActionPadding = 16.dp
     val collapsedConsoleHeight = 80.dp
     val cancelActionButtonWidth = 92.dp
     val confirmActionButtonWidth = 100.dp
     val consoleHeight by animateDpAsState(
-        targetValue = if (isSelecting || uiState.isProcessing) 140.dp else collapsedConsoleHeight,
+        targetValue = if (showExpandedConsole) 140.dp else collapsedConsoleHeight,
         label = "ConsoleHeight"
     )
     val animatedThumbnailItems = remember { mutableStateListOf<AnimatedThumbnailItem>() }
     val thumbnailListState = rememberLazyListState()
-    var previousSelectedPhotoIds by remember { mutableStateOf<List<Long>>(emptyList()) }
-    val actionButtonContainerColor by animateColorAsState(
-        targetValue = if (isSelecting) {
-            MaterialTheme.colorScheme.primary
+    var previousDisplayPhotoIds by remember { mutableStateOf<List<Long>>(emptyList()) }
+
+    val displayPhotos = remember(uiState.photos, uiState.selectedIds, uiState.processingPhotoIds, uiState.isProcessing) {
+        val photoById = uiState.photos.associateBy { it.id }
+        if (uiState.isProcessing) {
+            uiState.processingPhotoIds.mapNotNull(photoById::get)
         } else {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
-        },
+            uiState.photos.filter { it.id in uiState.selectedIds }
+        }
+    }
+    val highlightedPhotoId = if (uiState.isProcessing) uiState.currentProcessingPhotoId else null
+    val summaryBytes = if (uiState.isProcessing) uiState.processedSavingBytes else uiState.selectedSavingBytes
+    val summaryMb = summaryBytes.toDouble() / (1024.0 * 1024.0)
+    val context = LocalContext.current
+
+    val actionButtonContainerColor by animateColorAsState(
+        targetValue = if (isSelecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
         animationSpec = tween(durationMillis = 220),
         label = "ActionButtonContainerColor"
     )
     val actionButtonContentColor by animateColorAsState(
-        targetValue = if (isSelecting) {
-            MaterialTheme.colorScheme.onPrimary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
+        targetValue = if (isSelecting) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
         animationSpec = tween(durationMillis = 220),
         label = "ActionButtonContentColor"
     )
-    val confirmButtonContainerColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.primary,
+    val primaryButtonContainerColor by animateColorAsState(
+        targetValue = when {
+            uiState.isProcessing && uiState.isStopRequested -> MaterialTheme.colorScheme.error.copy(alpha = 0.6f)
+            uiState.isProcessing -> MaterialTheme.colorScheme.error
+            uiState.isConfirming -> MaterialTheme.colorScheme.primary
+            else -> actionButtonContainerColor
+        },
         animationSpec = tween(durationMillis = 220),
-        label = "ConfirmButtonContainerColor"
+        label = "PrimaryButtonContainerColor"
     )
-    val confirmButtonContentColor by animateColorAsState(
-        targetValue = MaterialTheme.colorScheme.onPrimary,
+    val primaryButtonContentColor by animateColorAsState(
+        targetValue = when {
+            uiState.isProcessing -> MaterialTheme.colorScheme.onError
+            uiState.isConfirming -> MaterialTheme.colorScheme.onPrimary
+            else -> actionButtonContentColor
+        },
         animationSpec = tween(durationMillis = 220),
-        label = "ConfirmButtonContentColor"
+        label = "PrimaryButtonContentColor"
     )
     val cancelButtonContainerColor by animateColorAsState(
         targetValue = MaterialTheme.colorScheme.secondary,
@@ -133,35 +148,46 @@ fun BottomFloatingConsole(
         label = "CancelButtonContentColor"
     )
     val cancelButtonWidth by animateDpAsState(
-        targetValue = if (uiState.isConfirming) cancelActionButtonWidth else 0.dp,
+        targetValue = if (uiState.isConfirming && !uiState.isProcessing) cancelActionButtonWidth else 0.dp,
         animationSpec = tween(durationMillis = 220),
         label = "CancelButtonWidth"
     )
     val confirmButtonWidth by animateDpAsState(
-        targetValue = if (uiState.isConfirming) confirmActionButtonWidth else 152.dp,
+        targetValue = if (uiState.isConfirming || uiState.isProcessing) confirmActionButtonWidth else 152.dp,
         animationSpec = tween(durationMillis = 220),
         label = "ConfirmButtonWidth"
     )
     val actionButtonsGap by animateDpAsState(
-        targetValue = if (uiState.isConfirming) 8.dp else 0.dp,
+        targetValue = if (uiState.isConfirming && !uiState.isProcessing) 8.dp else 0.dp,
         animationSpec = tween(durationMillis = 220),
         label = "ActionButtonsGap"
     )
+    val cancelTextAlpha by animateFloatAsState(
+        targetValue = if (uiState.isConfirming && !uiState.isProcessing) 1f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "CancelTextAlpha"
+    )
+    val cancelButtonAlpha by animateFloatAsState(
+        targetValue = if (uiState.isConfirming && !uiState.isProcessing) 1f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "CancelButtonAlpha"
+    )
+
     val targetLeftLabel = when {
-        uiState.isProcessing -> "hidden"
+        uiState.isProcessing -> "processing"
         isSelecting -> "selecting"
         else -> "idle"
     }
     var visibleLeftLabel by remember { mutableStateOf(targetLeftLabel) }
-    var showLeftLabel by remember { mutableStateOf(targetLeftLabel != "hidden") }
+    var showLeftLabel by remember { mutableStateOf(true) }
     LaunchedEffect(targetLeftLabel) {
         if (targetLeftLabel == visibleLeftLabel) {
-            showLeftLabel = targetLeftLabel != "hidden"
+            showLeftLabel = true
         } else {
             showLeftLabel = false
             delay(90)
             visibleLeftLabel = targetLeftLabel
-            showLeftLabel = targetLeftLabel != "hidden"
+            showLeftLabel = true
         }
     }
     val idleTextAlpha by animateFloatAsState(
@@ -174,7 +200,17 @@ fun BottomFloatingConsole(
         animationSpec = tween(durationMillis = 90),
         label = "SelectingTextAlpha"
     )
-    val targetPrimaryButtonLabel = if (uiState.isConfirming) "confirm" else "remove"
+    val processingTextAlpha by animateFloatAsState(
+        targetValue = if (showLeftLabel && visibleLeftLabel == "processing") 1f else 0f,
+        animationSpec = tween(durationMillis = 90),
+        label = "ProcessingTextAlpha"
+    )
+
+    val targetPrimaryButtonLabel = when {
+        uiState.isProcessing -> "stop"
+        uiState.isConfirming -> "confirm"
+        else -> "remove"
+    }
     var visiblePrimaryButtonLabel by remember { mutableStateOf(targetPrimaryButtonLabel) }
     var showPrimaryButtonLabel by remember { mutableStateOf(true) }
     LaunchedEffect(targetPrimaryButtonLabel) {
@@ -197,267 +233,226 @@ fun BottomFloatingConsole(
         animationSpec = tween(durationMillis = 90),
         label = "ConfirmTextAlpha"
     )
-    val cancelTextAlpha by animateFloatAsState(
-        targetValue = if (uiState.isConfirming) 1f else 0f,
-        animationSpec = tween(durationMillis = 180),
-        label = "CancelTextAlpha"
-    )
-    val cancelButtonAlpha by animateFloatAsState(
-        targetValue = if (uiState.isConfirming) 1f else 0f,
-        animationSpec = tween(durationMillis = 180),
-        label = "CancelButtonAlpha"
+    val stopTextAlpha by animateFloatAsState(
+        targetValue = if (showPrimaryButtonLabel && visiblePrimaryButtonLabel == "stop") 1f else 0f,
+        animationSpec = tween(durationMillis = 90),
+        label = "StopTextAlpha"
     )
 
+    LaunchedEffect(displayPhotos) {
+        val currentDisplayPhotoIds = displayPhotos.map { it.id }
+        val addedPhotoId = currentDisplayPhotoIds.firstOrNull { it !in previousDisplayPhotoIds }
+        val scrollTargetIndex = if (addedPhotoId != null) currentDisplayPhotoIds.indexOf(addedPhotoId) else -1
+        val displayPhotoIds = currentDisplayPhotoIds.toSet()
+        val displayOrder = displayPhotos.mapIndexed { index, photo -> photo.id to index }.toMap()
+
+        displayPhotos.forEach { photo ->
+            val existingIndex = animatedThumbnailItems.indexOfFirst { it.photo.id == photo.id }
+            if (existingIndex >= 0) {
+                animatedThumbnailItems[existingIndex] = animatedThumbnailItems[existingIndex].copy(photo = photo)
+                animatedThumbnailItems[existingIndex].visibilityState.targetState = true
+            } else {
+                animatedThumbnailItems += AnimatedThumbnailItem(
+                    photo = photo,
+                    visibilityState = MutableTransitionState(false).apply { targetState = true }
+                )
+            }
+        }
+
+        animatedThumbnailItems.forEach { item ->
+            if (item.photo.id !in displayPhotoIds) {
+                item.visibilityState.targetState = false
+            }
+        }
+
+        val currentOrder = animatedThumbnailItems.mapIndexed { index, item -> item.photo.id to index }.toMap()
+        animatedThumbnailItems.sortBy { item ->
+            displayOrder[item.photo.id] ?: (currentOrder[item.photo.id] ?: Int.MAX_VALUE)
+        }
+
+        previousDisplayPhotoIds = currentDisplayPhotoIds
+
+        if (scrollTargetIndex >= 0 && animatedThumbnailItems.isNotEmpty()) {
+            val targetIndex = scrollTargetIndex.coerceAtMost(animatedThumbnailItems.lastIndex)
+            withFrameNanos { }
+            val layoutInfo = thumbnailListState.layoutInfo
+            val targetItemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
+            val isFullyVisible = targetItemInfo != null &&
+                targetItemInfo.offset >= layoutInfo.viewportStartOffset &&
+                targetItemInfo.offset + targetItemInfo.size <= layoutInfo.viewportEndOffset
+
+            if (!isFullyVisible) {
+                thumbnailListState.animateScrollToItem(index = targetIndex)
+            }
+        }
+    }
+
     Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(consoleHeight),
+        modifier = modifier.fillMaxWidth().height(consoleHeight),
         shape = SquircleShape(40.dp, smoothing = 20),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 8.dp,
         shadowElevation = 8.dp
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
             AnimatedVisibility(
-                visible = isSelecting || uiState.isProcessing,
+                visible = showExpandedConsole,
                 enter = slideInVertically(
                     initialOffsetY = { it / 2 },
                     animationSpec = tween(durationMillis = 220)
-                ) +
-                    fadeIn(animationSpec = tween(durationMillis = 220)),
+                ) + fadeIn(animationSpec = tween(durationMillis = 220)),
                 exit = slideOutVertically(
                     targetOffsetY = { it / 2 },
                     animationSpec = tween(durationMillis = 180)
                 ) + fadeOut(animationSpec = tween(durationMillis = 180)),
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
+                val thumbnailLayoutInfo = thumbnailListState.layoutInfo
+                val visibleThumbnailItems = thumbnailLayoutInfo.visibleItemsInfo
+                val hasLeftOverflow = visibleThumbnailItems.firstOrNull()?.let { item ->
+                    item.index > 0 || item.offset < thumbnailLayoutInfo.viewportStartOffset
+                } == true
+                val hasRightOverflow = visibleThumbnailItems.lastOrNull()?.let { item ->
+                    item.index < animatedThumbnailItems.lastIndex ||
+                        item.offset + item.size > thumbnailLayoutInfo.viewportEndOffset
+                } == true
+
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 24.dp, top = 14.dp, end = 24.dp, bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp, top = 14.dp, end = 24.dp, bottom = 8.dp),
                     horizontalArrangement = Arrangement.Start,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (uiState.isProcessing) {
-                        Text(
-                            stringResource(R.string.processing_progress, uiState.progress, uiState.totalToProcess),
-                            fontWeight = FontWeight.Bold
-                        )
-                        LinearProgressIndicator(
-                            progress = { if (uiState.totalToProcess > 0) uiState.progress.toFloat() / uiState.totalToProcess else 0f },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 16.dp)
-                                .height(8.dp)
-                                .clip(CircleShape),
-                        )
-                    } else {
-                        val totalSavedMb = uiState.selectedSavingBytes.toDouble() / (1024.0 * 1024.0)
-                        val selectedPhotos = remember(uiState.photos, uiState.selectedIds) {
-                            uiState.photos.filter { it.id in uiState.selectedIds }
-                        }
-                        LaunchedEffect(selectedPhotos) {
-                            val currentSelectedPhotoIds = selectedPhotos.map { it.id }
-                            val addedPhotoId = currentSelectedPhotoIds.firstOrNull { it !in previousSelectedPhotoIds }
-                            val removedPhotoId = previousSelectedPhotoIds.firstOrNull { it !in currentSelectedPhotoIds }
-                            val scrollTargetIndex = when {
-                                addedPhotoId != null -> currentSelectedPhotoIds.indexOf(addedPhotoId)
-                                removedPhotoId != null -> previousSelectedPhotoIds.indexOf(removedPhotoId)
-                                else -> -1
-                            }
-                            val selectedIds = selectedPhotos.map { it.id }.toSet()
-                            val selectedOrder = selectedPhotos.mapIndexed { index, photo -> photo.id to index }.toMap()
+                    SubcomposeLayout(modifier = Modifier.fillMaxWidth()) { constraints ->
+                        val spacingPx = 8.dp.roundToPx()
+                        val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
 
-                            selectedPhotos.forEach { photo ->
-                                val existingIndex = animatedThumbnailItems.indexOfFirst { it.photo.id == photo.id }
-                                if (existingIndex >= 0) {
-                                    animatedThumbnailItems[existingIndex] =
-                                        animatedThumbnailItems[existingIndex].copy(photo = photo)
-                                    animatedThumbnailItems[existingIndex].visibilityState.targetState = true
-                                } else {
-                                    animatedThumbnailItems += AnimatedThumbnailItem(
-                                        photo = photo,
-                                        visibilityState = MutableTransitionState(false).apply {
-                                            targetState = true
-                                        }
-                                    )
-                                }
-                            }
+                        val summaryPlaceables = subcompose("summary") {
+                            Text(
+                                text = stringResource(R.string.save_mb, summaryMb),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }.map { it.measure(looseConstraints) }
 
-                            animatedThumbnailItems.forEach { item ->
-                                if (item.photo.id !in selectedIds) {
-                                    item.visibilityState.targetState = false
-                                }
-                            }
+                        val summaryWidth = summaryPlaceables.maxOfOrNull { it.width } ?: 0
+                        val summaryHeight = summaryPlaceables.maxOfOrNull { it.height } ?: 0
+                        val listMaxWidth = (constraints.maxWidth - summaryWidth - spacingPx).coerceAtLeast(0)
 
-                            val currentOrder = animatedThumbnailItems.mapIndexed { index, item -> item.photo.id to index }.toMap()
-                            animatedThumbnailItems.sortBy { item ->
-                                selectedOrder[item.photo.id] ?: (currentOrder[item.photo.id] ?: Int.MAX_VALUE)
-                            }
-
-                            previousSelectedPhotoIds = currentSelectedPhotoIds
-
-                            if (scrollTargetIndex >= 0 && animatedThumbnailItems.isNotEmpty()) {
-                                val targetIndex = scrollTargetIndex.coerceAtMost(animatedThumbnailItems.lastIndex)
-                                withFrameNanos { }
-                                val layoutInfo = thumbnailListState.layoutInfo
-                                val targetItemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
-                                val isFullyVisible = targetItemInfo != null &&
-                                    targetItemInfo.offset >= layoutInfo.viewportStartOffset &&
-                                    targetItemInfo.offset + targetItemInfo.size <= layoutInfo.viewportEndOffset
-
-                                if (!isFullyVisible) {
-                                    thumbnailListState.animateScrollToItem(index = targetIndex)
-                                }
-                            }
-                        }
-                        val context = LocalContext.current
-                        val thumbnailLayoutInfo = thumbnailListState.layoutInfo
-                        val visibleThumbnailItems = thumbnailLayoutInfo.visibleItemsInfo
-                        val hasLeftOverflow = visibleThumbnailItems.firstOrNull()?.let { firstVisibleItem ->
-                            firstVisibleItem.index > 0 || firstVisibleItem.offset < thumbnailLayoutInfo.viewportStartOffset
-                        } == true
-                        val hasRightOverflow = visibleThumbnailItems.lastOrNull()?.let { lastVisibleItem ->
-                            lastVisibleItem.index < animatedThumbnailItems.lastIndex ||
-                                lastVisibleItem.offset + lastVisibleItem.size > thumbnailLayoutInfo.viewportEndOffset
-                        } == true
-
-                        SubcomposeLayout(modifier = Modifier.fillMaxWidth()) { constraints ->
-                            val spacingPx = 8.dp.roundToPx()
-                            val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-
-                            val summaryPlaceables = subcompose("summary") {
-                                Text(
-                                    stringResource(R.string.save_mb, totalSavedMb),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }.map { it.measure(looseConstraints) }
-
-                            val summaryWidth = summaryPlaceables.maxOfOrNull { it.width } ?: 0
-                            val summaryHeight = summaryPlaceables.maxOfOrNull { it.height } ?: 0
-                            val listMaxWidth = (constraints.maxWidth - summaryWidth - spacingPx).coerceAtLeast(0)
-
-                            val listPlaceables = subcompose("thumbnails") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(44.dp)
+                        val listPlaceables = subcompose("thumbnails") {
+                            Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
+                                LazyRow(
+                                    state = thumbnailListState,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    contentPadding = PaddingValues(end = 16.dp)
                                 ) {
-                                    LazyRow(
-                                        state = thumbnailListState,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        contentPadding = PaddingValues(end = 16.dp)
-                                    ) {
-                                        items(animatedThumbnailItems, key = { it.photo.id }) { item ->
-                                            LaunchedEffect(item.visibilityState.isIdle, item.visibilityState.currentState) {
-                                                if (item.visibilityState.isIdle && !item.visibilityState.currentState) {
-                                                    animatedThumbnailItems.removeAll { it.photo.id == item.photo.id }
-                                                }
+                                    items(animatedThumbnailItems, key = { it.photo.id }) { item ->
+                                        LaunchedEffect(item.visibilityState.isIdle, item.visibilityState.currentState) {
+                                            if (item.visibilityState.isIdle && !item.visibilityState.currentState) {
+                                                animatedThumbnailItems.removeAll { it.photo.id == item.photo.id }
                                             }
-                                            val imageRequest = remember(item.photo.uri, item.photo.id) {
-                                                ImageRequest.Builder(context)
-                                                    .data(item.photo.uri)
-                                                    .memoryCacheKey("photo_cache_${item.photo.id}")
-                                                    .placeholderMemoryCacheKey("photo_cache_${item.photo.id}")
-                                                    .build()
-                                            }
-                                            androidx.compose.animation.AnimatedVisibility(
-                                                visibleState = item.visibilityState,
-                                                enter = expandHorizontally(
-                                                    expandFrom = Alignment.Start,
-                                                    animationSpec = tween(durationMillis = 180)
-                                                ) +
-                                                    fadeIn(animationSpec = tween(durationMillis = 180)) +
-                                                    scaleIn(
-                                                        initialScale = 0.88f,
-                                                        animationSpec = tween(durationMillis = 180)
-                                                    ),
-                                                exit = shrinkHorizontally(
-                                                    shrinkTowards = Alignment.Start,
-                                                    animationSpec = tween(durationMillis = 140)
-                                                ) +
-                                                    fadeOut(animationSpec = tween(durationMillis = 140)) +
-                                                    scaleOut(
-                                                        targetScale = 0.88f,
-                                                        animationSpec = tween(durationMillis = 140)
+                                        }
+                                        val imageRequest = remember(item.photo.uri, item.photo.id) {
+                                            ImageRequest.Builder(context)
+                                                .data(item.photo.uri)
+                                                .memoryCacheKey("photo_cache_${item.photo.id}")
+                                                .placeholderMemoryCacheKey("photo_cache_${item.photo.id}")
+                                                .build()
+                                        }
+                                        val shape = SquircleShape(8.dp, smoothing = 20)
+                                        val isHighlighted = item.photo.id == highlightedPhotoId
+                                        androidx.compose.animation.AnimatedVisibility(
+                                            visibleState = item.visibilityState,
+                                            enter = expandHorizontally(
+                                                expandFrom = Alignment.Start,
+                                                animationSpec = tween(durationMillis = 180)
+                                            ) + fadeIn(animationSpec = tween(durationMillis = 180)) + scaleIn(
+                                                initialScale = 0.88f,
+                                                animationSpec = tween(durationMillis = 180)
+                                            ),
+                                            exit = shrinkHorizontally(
+                                                shrinkTowards = Alignment.Start,
+                                                animationSpec = tween(durationMillis = 140)
+                                            ) + fadeOut(animationSpec = tween(durationMillis = 140)) + scaleOut(
+                                                targetScale = 0.88f,
+                                                animationSpec = tween(durationMillis = 140)
+                                            )
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(44.dp)
+                                                    .clip(shape)
+                                                    .border(
+                                                        width = if (isHighlighted) 2.dp else 0.dp,
+                                                        color = if (isHighlighted) MaterialTheme.colorScheme.error else Color.Transparent,
+                                                        shape = shape
                                                     )
+                                                    .clickable { onPreviewPhoto(item.photo) }
                                             ) {
                                                 AsyncImage(
                                                     model = imageRequest,
                                                     contentDescription = null,
                                                     modifier = Modifier
-                                                        .size(44.dp)
-                                                        .clip(SquircleShape(8.dp, smoothing = 20))
-                                                        .clickable { onPreviewPhoto(item.photo) },
+                                                        .fillMaxSize()
+                                                        .padding(if (isHighlighted) 2.dp else 0.dp)
+                                                        .clip(shape),
                                                     contentScale = ContentScale.Crop
                                                 )
                                             }
                                         }
                                     }
-
-                                    if (hasLeftOverflow) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.CenterStart)
-                                                .width(6.dp)
-                                                .fillMaxHeight()
-                                                .background(
-                                                    Brush.horizontalGradient(
-                                                        colors = listOf(
-                                                            MaterialTheme.colorScheme.surfaceVariant,
-                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f)
-                                                        )
-                                                    )
-                                                )
-                                        )
-                                    }
-
-                                    if (hasRightOverflow) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.CenterEnd)
-                                                .width(6.dp)
-                                                .fillMaxHeight()
-                                                .background(
-                                                    Brush.horizontalGradient(
-                                                        colors = listOf(
-                                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f),
-                                                            MaterialTheme.colorScheme.surfaceVariant
-                                                        )
-                                                    )
-                                                )
-                                        )
-                                    }
                                 }
-                            }.map {
-                                it.measure(
-                                    looseConstraints.copy(
-                                        minWidth = listMaxWidth,
-                                        maxWidth = listMaxWidth
+
+                                if (hasLeftOverflow) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterStart)
+                                            .width(6.dp)
+                                            .fillMaxHeight()
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(
+                                                        MaterialTheme.colorScheme.surfaceVariant,
+                                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f)
+                                                    )
+                                                )
+                                            )
                                     )
-                                )
+                                }
+
+                                if (hasRightOverflow) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.CenterEnd)
+                                            .width(6.dp)
+                                            .fillMaxHeight()
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(
+                                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0f),
+                                                        MaterialTheme.colorScheme.surfaceVariant
+                                                    )
+                                                )
+                                            )
+                                    )
+                                }
                             }
+                        }.map {
+                            it.measure(looseConstraints.copy(minWidth = listMaxWidth, maxWidth = listMaxWidth))
+                        }
 
-                            val listHeight = listPlaceables.maxOfOrNull { it.height } ?: 0
-                            val layoutHeight = maxOf(summaryHeight, listHeight)
-
-                            layout(constraints.maxWidth, layoutHeight) {
-                                listPlaceables.forEach { placeable ->
-                                    placeable.placeRelative(0, (layoutHeight - placeable.height) / 2)
-                                }
-                                summaryPlaceables.forEach { placeable ->
-                                    placeable.placeRelative(
-                                        x = constraints.maxWidth - placeable.width,
-                                        y = (layoutHeight - placeable.height) / 2
-                                    )
-                                }
+                        val listHeight = listPlaceables.maxOfOrNull { it.height } ?: 0
+                        val layoutHeight = maxOf(summaryHeight, listHeight)
+                        layout(constraints.maxWidth, layoutHeight) {
+                            listPlaceables.forEach { it.placeRelative(0, (layoutHeight - it.height) / 2) }
+                            summaryPlaceables.forEach {
+                                it.placeRelative(
+                                    x = constraints.maxWidth - it.width,
+                                    y = (layoutHeight - it.height) / 2
+                                )
                             }
                         }
                     }
@@ -494,13 +489,19 @@ fun BottomFloatingConsole(
                     contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
-                        stringResource(R.string.select_photos),
+                        text = stringResource(R.string.select_photos),
                         modifier = Modifier.alpha(idleTextAlpha),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        stringResource(R.string.selected_count, uiState.selectedIds.size),
+                        text = stringResource(R.string.selected_count, uiState.selectedIds.size),
                         modifier = Modifier.alpha(selectingTextAlpha),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = stringResource(R.string.progress_fraction, uiState.progress, uiState.totalToProcess),
+                        modifier = Modifier.alpha(processingTextAlpha),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.Medium
                     )
@@ -508,114 +509,86 @@ fun BottomFloatingConsole(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                Box(
-                    modifier = Modifier
-                        .width(236.dp)
-                        .height(48.dp),
-                    contentAlignment = Alignment.CenterEnd
+                Row(
+                    modifier = Modifier.height(48.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (uiState.isProcessing) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.CenterEnd
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(32.dp),
-                                strokeWidth = 3.dp
-                            )
-                        }
-                    } else {
-                        Row(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(cancelButtonWidth)
-                                    .fillMaxHeight()
+                    Box(
+                        modifier = Modifier.width(cancelButtonWidth).fillMaxHeight()
+                    ) {
+                        if (cancelButtonWidth > 0.dp) {
+                            Button(
+                                onClick = { onSetConfirming(false) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = cancelButtonContainerColor,
+                                    contentColor = cancelButtonContentColor
+                                ),
+                                modifier = Modifier.fillMaxSize().alpha(cancelButtonAlpha),
+                                shape = SquircleShape(25.dp, smoothing = 20),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                             ) {
-                                if (cancelButtonWidth > 0.dp) {
-                                    Button(
-                                        onClick = { onSetConfirming(false) },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = cancelButtonContainerColor,
-                                            contentColor = cancelButtonContentColor
-                                        ),
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .alpha(cancelButtonAlpha),
-                                        shape = SquircleShape(25.dp, smoothing = 20),
-                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = stringResource(R.string.cancel),
-                                                modifier = Modifier.alpha(cancelTextAlpha),
-                                                fontSize = 16.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Clip
-                                            )
-                                        }
-                                    }
-                                }
+                                Text(
+                                    text = stringResource(R.string.cancel),
+                                    modifier = Modifier.alpha(cancelTextAlpha),
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
                             }
+                        }
+                    }
 
-                            Spacer(modifier = Modifier.width(actionButtonsGap))
+                    Spacer(modifier = Modifier.width(actionButtonsGap))
 
-                            Box(
-                                modifier = Modifier
-                                    .width(confirmButtonWidth)
-                                    .fillMaxHeight()
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (uiState.isConfirming) {
-                                            onStartProcessing()
-                                        } else if (isSelecting) {
-                                            onSetConfirming(true)
-                                        }
-                                    },
-                                    enabled = true,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (uiState.isConfirming) {
-                                            confirmButtonContainerColor
-                                        } else {
-                                            actionButtonContainerColor
-                                        },
-                                        contentColor = if (uiState.isConfirming) {
-                                            confirmButtonContentColor
-                                        } else {
-                                            actionButtonContentColor
-                                        },
-                                        disabledContainerColor = actionButtonContainerColor,
-                                        disabledContentColor = actionButtonContentColor
-                                    ),
-                                    modifier = Modifier.fillMaxSize(),
-                                    shape = SquircleShape(25.dp, smoothing = 20),
-                                    contentPadding = if (uiState.isConfirming) {
-                                        PaddingValues(horizontal = 10.dp, vertical = 8.dp)
-                                    } else {
-                                        PaddingValues(horizontal = 32.dp, vertical = 12.dp)
-                                    }
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = stringResource(R.string.remove_motion),
-                                            modifier = Modifier.alpha(removeMotionTextAlpha),
-                                            fontSize = 16.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Clip
-                                        )
-                                        Text(
-                                            text = stringResource(R.string.confirm),
-                                            modifier = Modifier.alpha(confirmTextAlpha),
-                                            fontSize = 16.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Clip
-                                        )
-                                    }
+                    Box(
+                        modifier = Modifier.width(confirmButtonWidth).fillMaxHeight()
+                    ) {
+                        Button(
+                            onClick = {
+                                when {
+                                    uiState.isProcessing -> onStopProcessing()
+                                    uiState.isConfirming -> onStartProcessing()
+                                    isSelecting -> onSetConfirming(true)
                                 }
+                            },
+                            enabled = !uiState.isProcessing || !uiState.isStopRequested,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = primaryButtonContainerColor,
+                                contentColor = primaryButtonContentColor,
+                                disabledContainerColor = primaryButtonContainerColor,
+                                disabledContentColor = primaryButtonContentColor
+                            ),
+                            modifier = Modifier.fillMaxSize(),
+                            shape = SquircleShape(25.dp, smoothing = 20),
+                            contentPadding = if (uiState.isConfirming || uiState.isProcessing) {
+                                PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+                            } else {
+                                PaddingValues(horizontal = 32.dp, vertical = 12.dp)
+                            }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = stringResource(R.string.remove_motion),
+                                    modifier = Modifier.alpha(removeMotionTextAlpha),
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
+                                Text(
+                                    text = stringResource(R.string.confirm),
+                                    modifier = Modifier.alpha(confirmTextAlpha),
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
+                                Text(
+                                    text = stringResource(R.string.stop),
+                                    modifier = Modifier.alpha(stopTextAlpha),
+                                    fontSize = 16.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip
+                                )
                             }
                         }
                     }

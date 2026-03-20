@@ -21,7 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,10 +48,16 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(
+    ExperimentalFoundationApi::class,
+    ExperimentalSharedTransitionApi::class,
+    ExperimentalMaterial3Api::class
+)
 fun MotionPhotoGrid(
     photos: List<MotionPhoto>,
     selectedIds: Set<Long>,
+    isRefreshing: Boolean,
+    onRefresh: () -> Unit,
     onToggleSelection: (Long) -> Unit,
     onToggleDaySelection: (Set<Long>) -> Unit,
     onPreviewPhoto: (MotionPhoto) -> Unit,
@@ -61,59 +69,65 @@ fun MotionPhotoGrid(
     val dateFormat = stringResource(R.string.date_group_title_format)
     val groupedPhotos = remember(photos, dateFormat) { buildDateGroups(photos, dateFormat) }
 
-    LazyColumn(
-        state = scrollState,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
+        modifier = modifier.fillMaxSize()
     ) {
-        groupedPhotos.forEach { group ->
-            val selectedCount = group.photoIds.count { it in selectedIds }
-            val dayCheckState = when (selectedCount) {
-                0 -> CircleCheckState.Unchecked
-                group.photoIds.size -> CircleCheckState.Checked
-                else -> CircleCheckState.Indeterminate
-            }
+        LazyColumn(
+            state = scrollState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+        ) {
+            groupedPhotos.forEach { group ->
+                val selectedCount = group.photoIds.count { it in selectedIds }
+                val dayCheckState = when (selectedCount) {
+                    0 -> CircleCheckState.Unchecked
+                    group.photoIds.size -> CircleCheckState.Checked
+                    else -> CircleCheckState.Indeterminate
+                }
 
-            stickyHeader(key = "header_${group.dateKey}") {
-                DateGroupHeader(
-                    title = group.title,
-                    count = group.photos.size,
-                    state = dayCheckState,
-                    onToggle = { onToggleDaySelection(group.photoIds) }
-                )
-            }
+                stickyHeader(key = "header_${group.dateKey}") {
+                    DateGroupHeader(
+                        title = group.title,
+                        count = group.photos.size,
+                        state = dayCheckState,
+                        onToggle = { onToggleDaySelection(group.photoIds) }
+                    )
+                }
 
-            val photoRows = group.photos.chunked(4)
-            items(
-                items = photoRows,
-                key = { rowPhotos -> "row_${group.dateKey}_${rowPhotos.first().id}" }
-            ) { rowPhotos ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    rowPhotos.forEach { photo ->
-                        PhotoGridItem(
-                            photo = photo,
-                            isSelected = selectedIds.contains(photo.id),
-                            onPreviewPhoto = onPreviewPhoto,
-                            onToggleSelection = onToggleSelection,
-                            sharedTransitionScope = sharedTransitionScope,
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
+                val photoRows = group.photos.chunked(4)
+                items(
+                    items = photoRows,
+                    key = { rowPhotos -> "row_${group.dateKey}_${rowPhotos.first().id}" }
+                ) { rowPhotos ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowPhotos.forEach { photo ->
+                            PhotoGridItem(
+                                photo = photo,
+                                isSelected = selectedIds.contains(photo.id),
+                                onPreviewPhoto = onPreviewPhoto,
+                                onToggleSelection = onToggleSelection,
+                                sharedTransitionScope = sharedTransitionScope,
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
 
-                    repeat(4 - rowPhotos.size) {
-                        Spacer(modifier = Modifier.weight(1f))
+                        repeat(4 - rowPhotos.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
-            }
 
-            item(key = "space_${group.dateKey}") {
-                Spacer(modifier = Modifier.height(10.dp))
+                item(key = "space_${group.dateKey}") {
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
             }
         }
     }

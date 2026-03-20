@@ -193,6 +193,8 @@ class MainActivity : ComponentActivity() {
                                     MotionPhotoGrid(
                                         photos = uiState.photos,
                                         selectedIds = uiState.selectedIds,
+                                        isRefreshing = uiState.isLoading && uiState.photos.isNotEmpty(),
+                                        onRefresh = { viewModel.loadPhotos() },
                                         onToggleSelection = { viewModel.toggleSelection(it) },
                                         onToggleDaySelection = { viewModel.toggleSelectionForIds(it) },
                                         onPreviewPhoto = { viewModel.openPreview(it) },
@@ -203,7 +205,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 }
 
-                                if (uiState.isLoading) {
+                                if (uiState.isLoading && uiState.photos.isEmpty()) {
                                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                         CircularProgressIndicator()
                                     }
@@ -279,6 +281,7 @@ class MainActivity : ComponentActivity() {
                     BottomFloatingConsole(
                         uiState = uiState,
                         onStartProcessing = { viewModel.startProcessing(trashLauncher) },
+                        onStopProcessing = { viewModel.requestStopProcessing() },
                         onSetConfirming = { viewModel.setConfirming(it) },
                         onPreviewPhoto = { viewModel.openPreview(it) },
                         modifier = Modifier

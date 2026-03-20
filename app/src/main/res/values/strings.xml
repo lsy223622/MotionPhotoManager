@@ -18,8 +18,10 @@
     <string name="save_mb">-%.1f MB</string>
     <string name="cancel">Cancel</string>
     <string name="confirm">Confirm</string>
+    <string name="stop">Stop</string>
     <string name="remove_motion">Remove Motion</string>
-    
+    <string name="progress_fraction">Processing %1$d / %2$d</string>
+
     <!-- Date Format -->
     <string name="date_group_title_format">EEEE, MMMM d, yyyy</string>
 </resources>
