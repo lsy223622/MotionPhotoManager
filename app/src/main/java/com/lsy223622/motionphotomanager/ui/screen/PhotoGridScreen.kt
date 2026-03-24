@@ -39,6 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -69,6 +70,7 @@ fun MotionPhotoGrid(
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     scrollState: LazyListState,
+    bottomContentPadding: Dp = 8.dp,
     modifier: Modifier = Modifier
 ) {
     val dateFormat = stringResource(R.string.date_group_title_format)
@@ -83,7 +85,12 @@ fun MotionPhotoGrid(
         LazyColumn(
             state = scrollState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+            contentPadding = PaddingValues(
+                start = 8.dp,
+                top = 8.dp,
+                end = 8.dp,
+                bottom = bottomContentPadding
+            )
         ) {
             groupedPhotos.forEach { group ->
                 val selectedCount = group.photoIds.count { it in selectedIds }

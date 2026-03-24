@@ -4,6 +4,7 @@
     <!-- Main Screen -->
     <string name="motion_photos_title">动态照片管理器</string>
     <string name="photos_count">%d 张照片</string>
+    <string name="scanning_photos">扫描照片中</string>
     <string name="no_motion_photos_found">未找到动态照片</string>
     
     <!-- Permission & Toast Messages -->

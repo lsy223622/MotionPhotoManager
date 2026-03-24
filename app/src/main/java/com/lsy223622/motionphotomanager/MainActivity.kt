@@ -93,6 +93,10 @@ import com.lsy223622.motionphotomanager.ui.screen.PREVIEW_FADE_OUT_DURATION_MS
 import com.lsy223622.motionphotomanager.ui.theme.MotionPhotoManagerTheme
 import android.graphics.Color as AndroidColor
 
+private val FloatingConsoleBottomPadding = 32.dp
+private val FloatingConsoleExpandedHeight = 140.dp
+private val PhotoGridBottomClearance = FloatingConsoleBottomPadding + FloatingConsoleExpandedHeight + 12.dp
+
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -187,6 +191,7 @@ class MainActivity : ComponentActivity() {
                                 topBar = {
                                     HomeTopBar(
                                         photoCount = uiState.photos.size,
+                                        isInitialScanLoading = uiState.isLoading && uiState.photos.isEmpty(),
                                         selectedMode = uiState.processingMode,
                                         deleteOriginalAfterProcessing = uiState.deleteOriginalAfterProcessing,
                                         onModeSelected = { viewModel.setProcessingMode(it) },
@@ -218,6 +223,7 @@ class MainActivity : ComponentActivity() {
                                         sharedTransitionScope = this@SharedTransitionLayout,
                                         animatedVisibilityScope = this@AnimatedVisibility,
                                         scrollState = gridScrollState,
+                                        bottomContentPadding = PhotoGridBottomClearance,
                                         modifier = Modifier.padding(innerPadding)
                                     )
                                 }
@@ -303,7 +309,7 @@ class MainActivity : ComponentActivity() {
                         onPreviewPhoto = { viewModel.openPreview(it) },
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 32.dp, start = 16.dp, end = 16.dp)
+                            .padding(bottom = FloatingConsoleBottomPadding, start = 16.dp, end = 16.dp)
                     )
                 }
             }
@@ -314,6 +320,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun HomeTopBar(
     photoCount: Int,
+    isInitialScanLoading: Boolean,
     selectedMode: MotionPhotoProcessingMode,
     deleteOriginalAfterProcessing: Boolean,
     onModeSelected: (MotionPhotoProcessingMode) -> Unit,
@@ -341,7 +348,11 @@ private fun HomeTopBar(
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        text = stringResource(R.string.photos_count, photoCount),
+                        text = if (isInitialScanLoading) {
+                            stringResource(R.string.scanning_photos)
+                        } else {
+                            stringResource(R.string.photos_count, photoCount)
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

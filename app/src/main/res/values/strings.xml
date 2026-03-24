@@ -4,6 +4,7 @@
     <!-- Main Screen -->
     <string name="motion_photos_title">Motion Photos Manager</string>
     <string name="photos_count">%d photos</string>
+    <string name="scanning_photos">Scanning photos</string>
     <string name="no_motion_photos_found">No motion photos found</string>
     
     <!-- Permission & Toast Messages -->
