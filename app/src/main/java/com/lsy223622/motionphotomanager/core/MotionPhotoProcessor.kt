@@ -50,6 +50,46 @@ object MotionPhotoProcessor {
         }
     }
 
+    fun extractVideo(
+        inputStream: InputStream,
+        outputStream: OutputStream,
+        videoOffset: Long,
+        totalLength: Long
+    ): Boolean {
+        return try {
+            val imageLength = totalLength - videoOffset
+            if (imageLength <= 0L || videoOffset <= 0L) return false
+            if (!skipFully(inputStream, imageLength)) return false
+
+            val buffer = ByteArray(8192)
+            while (true) {
+                val read = inputStream.read(buffer)
+                if (read == -1) break
+                outputStream.write(buffer, 0, read)
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting video", e)
+            false
+        }
+    }
+
+    private fun skipFully(inputStream: InputStream, bytesToSkip: Long): Boolean {
+        var remaining = bytesToSkip
+        val buffer = ByteArray(8192)
+        while (remaining > 0L) {
+            val skipped = inputStream.skip(remaining)
+            if (skipped > 0L) {
+                remaining -= skipped
+                continue
+            }
+            val read = inputStream.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+            if (read == -1) return false
+            remaining -= read.toLong()
+        }
+        return true
+    }
+
     private fun sanitizeXmpHeader(imageData: ByteArray): ByteArray {
         val scanLength = imageData.size
         if (scanLength <= 0) return imageData

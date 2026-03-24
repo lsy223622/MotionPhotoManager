@@ -1,7 +1,6 @@
 package com.lsy223622.motionphotomanager.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -14,7 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 enum class CircleCheckState {
@@ -36,12 +34,7 @@ fun CircularSelectionCheckbox(
             .clip(CircleShape)
             .background(
                 if (isActive) MaterialTheme.colorScheme.primary
-                else Color.Black.copy(alpha = 0.36f)
-            )
-            .border(
-                width = if (isActive) 0.dp else 1.dp,
-                color = Color.White.copy(alpha = 0.75f),
-                shape = CircleShape
+                else MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.72f)
             )
             .clickable { onClick() },
         contentAlignment = Alignment.Center

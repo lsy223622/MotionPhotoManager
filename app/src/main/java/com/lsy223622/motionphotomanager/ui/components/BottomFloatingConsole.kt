@@ -15,10 +15,10 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -63,6 +64,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
+import com.lsy223622.motionphotomanager.data.MotionPhotoProcessingMode
 import com.lsy223622.motionphotomanager.ui.UiState
 import kotlinx.coroutines.delay
 import sv.lib.squircleshape.SquircleShape
@@ -71,6 +73,8 @@ private data class AnimatedThumbnailItem(
     val photo: MotionPhoto,
     val visibilityState: MutableTransitionState<Boolean>
 )
+
+private const val BYTES_PER_MB = 1024.0 * 1024.0
 
 @Composable
 fun BottomFloatingConsole(
@@ -104,9 +108,46 @@ fun BottomFloatingConsole(
         }
     }
     val highlightedPhotoId = if (uiState.isProcessing) uiState.currentProcessingPhotoId else null
-    val summaryBytes = if (uiState.isProcessing) uiState.processedSavingBytes else uiState.selectedSavingBytes
-    val summaryMb = summaryBytes.toDouble() / (1024.0 * 1024.0)
+    val selectionPhotoBytes = displayPhotos.sumOf { calculatePhotoBytes(it) }
+    val selectionVideoBytes = displayPhotos.sumOf { calculateVideoBytes(it) }
+    val selectionOriginalBytes = displayPhotos.sumOf { it.size.coerceAtLeast(0L) }
+    val selectionConvertedBytes = displayPhotos.sumOf { calculateConvertedBytes(it, uiState.processingMode) }
     val context = LocalContext.current
+    val summaryLine1Text = if (uiState.processingMode == MotionPhotoProcessingMode.SPLIT_BOTH) {
+        val photoMb = if (uiState.isProcessing) {
+            uiState.processedPhotoBytes.toDouble() / BYTES_PER_MB
+        } else {
+            selectionPhotoBytes.toDouble() / BYTES_PER_MB
+        }
+        stringResource(R.string.photo_file_mb, photoMb)
+    } else {
+        val originalMb = if (uiState.isProcessing) {
+            uiState.processedOriginalBytes.toDouble() / BYTES_PER_MB
+        } else {
+            selectionOriginalBytes.toDouble() / BYTES_PER_MB
+        }
+        stringResource(R.string.original_file_mb, originalMb)
+    }
+    val summaryLine2Text = if (uiState.processingMode == MotionPhotoProcessingMode.SPLIT_BOTH) {
+        val videoMb = if (uiState.isProcessing) {
+            uiState.processedVideoBytes.toDouble() / BYTES_PER_MB
+        } else {
+            selectionVideoBytes.toDouble() / BYTES_PER_MB
+        }
+        stringResource(R.string.video_file_mb, videoMb)
+    } else {
+        val convertedMb = if (uiState.isProcessing) {
+            uiState.processedConvertedBytes.toDouble() / BYTES_PER_MB
+        } else {
+            selectionConvertedBytes.toDouble() / BYTES_PER_MB
+        }
+        stringResource(R.string.converted_file_mb, convertedMb)
+    }
+    val primaryActionText = when (uiState.processingMode) {
+        MotionPhotoProcessingMode.PHOTO_ONLY -> stringResource(R.string.action_remove_motion)
+        MotionPhotoProcessingMode.VIDEO_ONLY -> stringResource(R.string.action_extract_motion)
+        MotionPhotoProcessingMode.SPLIT_BOTH -> stringResource(R.string.action_split_motion)
+    }
 
     val actionButtonContainerColor by animateColorAsState(
         targetValue = if (isSelecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
@@ -327,14 +368,25 @@ fun BottomFloatingConsole(
                         val looseConstraints = constraints.copy(minWidth = 0, minHeight = 0)
 
                         val summaryPlaceables = subcompose("summary") {
-                            Text(
-                                text = stringResource(R.string.save_mb, summaryMb),
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Column(horizontalAlignment = Alignment.Start) {
+                                Text(
+                                    text = summaryLine1Text,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = summaryLine2Text,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }.map { it.measure(looseConstraints) }
 
                         val summaryWidth = summaryPlaceables.maxOfOrNull { it.width } ?: 0
@@ -384,12 +436,13 @@ fun BottomFloatingConsole(
                                             Box(
                                                 modifier = Modifier
                                                     .size(44.dp)
-                                                    .clip(shape)
-                                                    .border(
-                                                        width = if (isHighlighted) 2.dp else 0.dp,
-                                                        color = if (isHighlighted) MaterialTheme.colorScheme.error else Color.Transparent,
-                                                        shape = shape
+                                                    .shadow(
+                                                        elevation = if (isHighlighted) 14.dp else 0.dp,
+                                                        shape = shape,
+                                                        ambientColor = primaryButtonContainerColor,
+                                                        spotColor = primaryButtonContainerColor
                                                     )
+                                                    .clip(shape)
                                                     .clickable { onPreviewPhoto(item.photo) }
                                             ) {
                                                 AsyncImage(
@@ -397,7 +450,6 @@ fun BottomFloatingConsole(
                                                     contentDescription = null,
                                                     modifier = Modifier
                                                         .fillMaxSize()
-                                                        .padding(if (isHighlighted) 2.dp else 0.dp)
                                                         .clip(shape),
                                                     contentScale = ContentScale.Crop
                                                 )
@@ -569,7 +621,7 @@ fun BottomFloatingConsole(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = stringResource(R.string.remove_motion),
+                                    text = primaryActionText,
                                     modifier = Modifier.alpha(removeMotionTextAlpha),
                                     fontSize = 16.sp,
                                     maxLines = 1,
@@ -596,4 +648,25 @@ fun BottomFloatingConsole(
             }
         }
     }
+}
+
+private fun calculateConvertedBytes(
+    photo: MotionPhoto,
+    mode: MotionPhotoProcessingMode
+): Long {
+    val videoBytes = calculateVideoBytes(photo)
+    val photoBytes = calculatePhotoBytes(photo)
+    return when (mode) {
+        MotionPhotoProcessingMode.PHOTO_ONLY -> photoBytes
+        MotionPhotoProcessingMode.VIDEO_ONLY -> videoBytes
+        MotionPhotoProcessingMode.SPLIT_BOTH -> photoBytes + videoBytes
+    }
+}
+
+private fun calculatePhotoBytes(photo: MotionPhoto): Long {
+    return (photo.size - photo.videoOffset.coerceAtLeast(0L)).coerceAtLeast(0L)
+}
+
+private fun calculateVideoBytes(photo: MotionPhoto): Long {
+    return photo.videoOffset.coerceAtLeast(0L)
 }

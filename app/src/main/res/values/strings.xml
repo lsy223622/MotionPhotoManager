@@ -8,8 +8,8 @@
     
     <!-- Permission & Toast Messages -->
     <string name="permission_denied">Permission denied. Please grant permission in settings.</string>
-    <string name="original_photos_trashed">Original photos moved to trash</string>
-    <string name="original_photos_not_trashed">Converted photos kept. Original photos were not moved to trash.</string>
+    <string name="original_photos_trashed">Original files moved to trash</string>
+    <string name="original_photos_not_trashed">Exported files kept. Original files were not moved to trash.</string>
     
     <!-- Bottom Console -->
     <string name="select_photos">Select photos</string>
@@ -20,7 +20,27 @@
     <string name="confirm">Confirm</string>
     <string name="stop">Stop</string>
     <string name="remove_motion">Remove Motion</string>
+    <string name="action_remove_motion">Remove Motion</string>
+    <string name="action_extract_motion">Extract Motion</string>
+    <string name="action_split_motion">Split Motion</string>
+    <string name="keep_photo_only">Keep Photo</string>
+    <string name="keep_video_only">Keep Video</string>
+    <string name="split_both_parts">Split Both</string>
+    <string name="retain_prefix">Retain</string>
+    <string name="retain_photo">Photo</string>
+    <string name="retain_video">Video</string>
+    <string name="retain_photo_and_video">Photo+Video</string>
+    <string name="delete_original_file">Delete original</string>
+    <string name="processing_mode_help">Processing mode help</string>
+    <string name="keep_photo_only_help">Retain Photo: extract the still image as a separate file.</string>
+    <string name="keep_video_only_help">Retain Video: extract the embedded video as a separate file.</string>
+    <string name="split_both_parts_help">Retain Photo+Video: export the still image and embedded video as separate files.</string>
+    <string name="processing_mode_delete_original_help">If delete original is checked, the source file is moved to the system trash.</string>
     <string name="progress_fraction">Processing %1$d / %2$d</string>
+    <string name="original_file_mb">Original: %.1f MB</string>
+    <string name="converted_file_mb">Converted: %.1f MB</string>
+    <string name="photo_file_mb">Photo: %.1f MB</string>
+    <string name="video_file_mb">Video: %.1f MB</string>
 
     <!-- Date Format -->
     <string name="date_group_title_format">EEEE, MMMM d, yyyy</string>

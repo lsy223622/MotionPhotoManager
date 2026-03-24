@@ -8,8 +8,8 @@
     
     <!-- Permission & Toast Messages -->
     <string name="permission_denied">权限被拒绝，请在设置中授予权限。</string>
-    <string name="original_photos_trashed">原始照片已移至回收站</string>
-    <string name="original_photos_not_trashed">已保留转换后的照片，原始照片未移至回收站。</string>
+    <string name="original_photos_trashed">原始文件已移至回收站</string>
+    <string name="original_photos_not_trashed">已保留导出的文件，原始文件未移至回收站。</string>
     
     <!-- Bottom Console -->
     <string name="select_photos">请选择照片</string>
@@ -20,8 +20,28 @@
     <string name="confirm">确认</string>
     <string name="stop">停止</string>
     <string name="remove_motion">移除动态</string>
+    <string name="action_remove_motion">移除动态</string>
+    <string name="action_extract_motion">提取动态</string>
+    <string name="action_split_motion">分离动态</string>
+    <string name="keep_photo_only">只保留照片</string>
+    <string name="keep_video_only">只保留视频</string>
+    <string name="split_both_parts">分离两部分</string>
+    <string name="retain_prefix">保留</string>
+    <string name="retain_photo">照片</string>
+    <string name="retain_video">视频</string>
+    <string name="retain_photo_and_video">照片+视频</string>
+    <string name="delete_original_file">删除原图</string>
+    <string name="processing_mode_help">处理模式说明</string>
+    <string name="keep_photo_only_help">保留照片：提取动态照片中的静态照片部分保存成文件。</string>
+    <string name="keep_video_only_help">保留视频：提取动态照片中的视频部分保存成视频文件。</string>
+    <string name="split_both_parts_help">保留照片+视频：分别提取静态照片和视频并保存成单独文件。</string>
+    <string name="processing_mode_delete_original_help">如果勾选删除原图，原文件会移入系统回收站。</string>
     
     <!-- Date Format -->
     <string name="progress_fraction">正在处理 %1$d / %2$d</string>
+    <string name="original_file_mb">原文件：%.1f MB</string>
+    <string name="converted_file_mb">转换后：%.1f MB</string>
+    <string name="photo_file_mb">照片：%.1f MB</string>
+    <string name="video_file_mb">视频：%.1f MB</string>
     <string name="date_group_title_format">yyyy年M月d日 EEEE</string>
 </resources>

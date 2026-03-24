@@ -20,14 +20,36 @@ class MotionPhotoRepository(private val context: Context) {
     private val motionPhotoNamePatterns = arrayOf("MVIMG_%", "PXL_%", "%_MP.jpg")
     private val videoLengthRegex = Regex("Item:Mime=\\\"video/mp4\\\"(?s).*?Item:Length=\\\"(\\d+)\\\"")
 
-    private fun buildCompactedDisplayName(originalName: String): String {
+    private fun buildStillDisplayName(originalName: String): String {
         val base = when {
             originalName.startsWith("MVIMG_", ignoreCase = true) -> {
                 "IMG_" + originalName.removePrefix("MVIMG_")
             }
             else -> originalName
         }
-        return "COMPACT_$base"
+        return "STILL_$base"
+    }
+
+    private fun buildVideoDisplayName(originalName: String): String {
+        return "VIDEO_${extractBaseName(originalName)}.mp4"
+    }
+
+    private fun buildSplitPhotoDisplayName(originalName: String): String {
+        return "STILL_${extractBaseName(originalName)}.jpg"
+    }
+
+    private fun extractBaseName(originalName: String): String {
+        val extensionIndex = originalName.lastIndexOf('.')
+        val nameWithoutExtension = if (extensionIndex > 0) {
+            originalName.substring(0, extensionIndex)
+        } else {
+            originalName
+        }
+        return if (nameWithoutExtension.endsWith("_MP", ignoreCase = true)) {
+            nameWithoutExtension.dropLast(3)
+        } else {
+            nameWithoutExtension
+        }
     }
 
     suspend fun fetchMotionPhotos(): List<MotionPhoto> = withContext(Dispatchers.IO) {
@@ -134,6 +156,255 @@ class MotionPhotoRepository(private val context: Context) {
         }
     }
 
+    suspend fun processPhoto(
+        photo: MotionPhoto,
+        mode: MotionPhotoProcessingMode
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val contentResolver = context.contentResolver
+            val resolvedVideoOffset = if (photo.videoOffset > 0L) photo.videoOffset else findVideoOffset(photo.uri)
+            if (resolvedVideoOffset <= 0L) {
+                Log.w(tag, "Skip non-motion or unsupported file: ${photo.uri}")
+                return@withContext false
+            }
+
+            val totalLength = if (photo.size > 0L) {
+                photo.size
+            } else {
+                contentResolver.openAssetFileDescriptor(photo.uri, "r")?.use { afd ->
+                    afd.length
+                } ?: -1L
+            }
+            if (totalLength <= 0L) {
+                Log.w(tag, "Unable to determine file length for ${photo.uri}")
+                return@withContext false
+            }
+
+            val sourceRelativePath = querySourceRelativePath(photo.uri)
+            val originalUri = MediaStore.setRequireOriginal(photo.uri)
+
+            return@withContext when (mode) {
+                MotionPhotoProcessingMode.PHOTO_ONLY -> exportPhotoOnly(
+                    photo = photo,
+                    originalUri = originalUri,
+                    resolvedVideoOffset = resolvedVideoOffset,
+                    totalLength = totalLength,
+                    relativePath = sourceRelativePath
+                )
+                MotionPhotoProcessingMode.VIDEO_ONLY -> exportVideoOnly(
+                    photo = photo,
+                    originalUri = originalUri,
+                    resolvedVideoOffset = resolvedVideoOffset,
+                    totalLength = totalLength,
+                    relativePath = sourceRelativePath
+                )
+                MotionPhotoProcessingMode.SPLIT_BOTH -> exportSplitParts(
+                    photo = photo,
+                    originalUri = originalUri,
+                    resolvedVideoOffset = resolvedVideoOffset,
+                    totalLength = totalLength,
+                    relativePath = sourceRelativePath
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error processing photo ${photo.uri}", e)
+            false
+        }
+    }
+
+    private fun exportPhotoOnly(
+        photo: MotionPhoto,
+        originalUri: Uri,
+        resolvedVideoOffset: Long,
+        totalLength: Long,
+        relativePath: String?
+    ): Boolean {
+        val targetUri = createPendingImage(
+            displayName = buildStillDisplayName(photo.name),
+            photo = photo,
+            relativePath = relativePath
+        ) ?: return false
+
+        val success = writeStaticImage(
+            sourceUri = originalUri,
+            targetUri = targetUri,
+            videoOffset = resolvedVideoOffset,
+            totalLength = totalLength
+        )
+
+        return if (success) {
+            if (publishPendingImage(targetUri)) {
+                true
+            } else {
+                context.contentResolver.delete(targetUri, null, null)
+                false
+            }
+        } else {
+            context.contentResolver.delete(targetUri, null, null)
+            false
+        }
+    }
+
+    private fun exportVideoOnly(
+        photo: MotionPhoto,
+        originalUri: Uri,
+        resolvedVideoOffset: Long,
+        totalLength: Long,
+        relativePath: String?
+    ): Boolean {
+        val targetUri = createPendingVideo(
+            displayName = buildVideoDisplayName(photo.name),
+            photo = photo,
+            relativePath = relativePath
+        ) ?: return false
+
+        val success = writeVideo(
+            sourceUri = originalUri,
+            targetUri = targetUri,
+            videoOffset = resolvedVideoOffset,
+            totalLength = totalLength
+        )
+
+        return if (success) {
+            if (publishPendingVideo(targetUri)) {
+                true
+            } else {
+                context.contentResolver.delete(targetUri, null, null)
+                false
+            }
+        } else {
+            context.contentResolver.delete(targetUri, null, null)
+            false
+        }
+    }
+
+    private fun exportSplitParts(
+        photo: MotionPhoto,
+        originalUri: Uri,
+        resolvedVideoOffset: Long,
+        totalLength: Long,
+        relativePath: String?
+    ): Boolean {
+        val imageUri = createPendingImage(
+            displayName = buildSplitPhotoDisplayName(photo.name),
+            photo = photo,
+            relativePath = relativePath
+        ) ?: return false
+        val videoUri = createPendingVideo(
+            displayName = buildVideoDisplayName(photo.name),
+            photo = photo,
+            relativePath = relativePath
+        ) ?: run {
+            context.contentResolver.delete(imageUri, null, null)
+            return false
+        }
+
+        val imageSuccess = writeStaticImage(
+            sourceUri = originalUri,
+            targetUri = imageUri,
+            videoOffset = resolvedVideoOffset,
+            totalLength = totalLength
+        )
+        val videoSuccess = writeVideo(
+            sourceUri = originalUri,
+            targetUri = videoUri,
+            videoOffset = resolvedVideoOffset,
+            totalLength = totalLength
+        )
+
+        return if (imageSuccess && videoSuccess) {
+            val imagePublished = publishPendingImage(imageUri)
+            val videoPublished = publishPendingVideo(videoUri)
+            if (imagePublished && videoPublished) {
+                true
+            } else {
+                context.contentResolver.delete(imageUri, null, null)
+                context.contentResolver.delete(videoUri, null, null)
+                false
+            }
+        } else {
+            context.contentResolver.delete(imageUri, null, null)
+            context.contentResolver.delete(videoUri, null, null)
+            false
+        }
+    }
+
+    private fun createPendingImage(
+        displayName: String,
+        photo: MotionPhoto,
+        relativePath: String?
+    ): Uri? {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.DATE_TAKEN, photo.dateTaken)
+            put(MediaStore.Images.Media.DATE_ADDED, photo.dateTaken / 1000)
+            put(MediaStore.Images.Media.DATE_MODIFIED, photo.dateModified)
+            put(MediaStore.Images.Media.RELATIVE_PATH, relativePath ?: (Environment.DIRECTORY_DCIM + "/Camera"))
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+        return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+    }
+
+    private fun createPendingVideo(
+        displayName: String,
+        photo: MotionPhoto,
+        relativePath: String?
+    ): Uri? {
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, displayName)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.DATE_TAKEN, photo.dateTaken)
+            put(MediaStore.Video.Media.DATE_ADDED, photo.dateTaken / 1000)
+            put(MediaStore.Video.Media.DATE_MODIFIED, photo.dateModified)
+            put(MediaStore.Video.Media.RELATIVE_PATH, relativePath ?: (Environment.DIRECTORY_DCIM + "/Camera"))
+            put(MediaStore.Video.Media.IS_PENDING, 1)
+        }
+        return context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+    }
+
+    private fun writeStaticImage(
+        sourceUri: Uri,
+        targetUri: Uri,
+        videoOffset: Long,
+        totalLength: Long
+    ): Boolean {
+        val contentResolver = context.contentResolver
+        return contentResolver.openInputStream(sourceUri)?.use { input ->
+            contentResolver.openOutputStream(targetUri)?.use { output ->
+                MotionPhotoProcessor.extractStaticImage(input, output, videoOffset, totalLength)
+            }
+        } ?: false
+    }
+
+    private fun writeVideo(
+        sourceUri: Uri,
+        targetUri: Uri,
+        videoOffset: Long,
+        totalLength: Long
+    ): Boolean {
+        val contentResolver = context.contentResolver
+        return contentResolver.openInputStream(sourceUri)?.use { input ->
+            contentResolver.openOutputStream(targetUri)?.use { output ->
+                MotionPhotoProcessor.extractVideo(input, output, videoOffset, totalLength)
+            }
+        } ?: false
+    }
+
+    private fun publishPendingImage(uri: Uri): Boolean {
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.IS_PENDING, 0)
+        }
+        return context.contentResolver.update(uri, values, null, null) > 0
+    }
+
+    private fun publishPendingVideo(uri: Uri): Boolean {
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.IS_PENDING, 0)
+        }
+        return context.contentResolver.update(uri, values, null, null) > 0
+    }
+
     private fun findVideoOffset(uri: Uri): Long {
         try {
             val metadataText = readMetadataText(uri)
@@ -211,70 +482,7 @@ class MotionPhotoRepository(private val context: Context) {
         return true
     }
 
-    suspend fun compactPhoto(photo: MotionPhoto): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val contentResolver = context.contentResolver
-            val resolvedVideoOffset = if (photo.videoOffset > 0) photo.videoOffset else findVideoOffset(photo.uri)
-            if (resolvedVideoOffset <= 0L) {
-                Log.w(tag, "Skip non-motion or unsupported file: ${photo.uri}")
-                return@withContext false
-            }
-
-            val totalLength = if (photo.size > 0) {
-                photo.size
-            } else {
-                contentResolver.openAssetFileDescriptor(photo.uri, "r")?.use { afd ->
-                    afd.length
-                } ?: -1L
-            }
-            if (totalLength <= 0L) {
-                Log.w(tag, "Unable to determine file length for ${photo.uri}")
-                return@withContext false
-            }
-
-            val sourceRelativePath =
-                querySourceRelativePath(photo.uri)
-
-            // 1. Prepare new file metadata
-            val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, buildCompactedDisplayName(photo.name))
-                put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-                put(MediaStore.Images.Media.DATE_TAKEN, photo.dateTaken)
-                put(MediaStore.Images.Media.DATE_ADDED, photo.dateTaken / 1000) // Sync added time
-                put(MediaStore.Images.Media.DATE_MODIFIED, photo.dateModified)
-                put(MediaStore.Images.Media.RELATIVE_PATH, sourceRelativePath ?: (Environment.DIRECTORY_DCIM + "/Camera"))
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-
-            val newUri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return@withContext false
-
-            // 2. Perform extraction
-            val originalUri =
-                MediaStore.setRequireOriginal(photo.uri) // 强行要求系统返回带经纬度的原始流
-            val success = contentResolver.openInputStream(originalUri)?.use { input ->
-                contentResolver.openOutputStream(newUri)?.use { output ->
-                    MotionPhotoProcessor.extractStaticImage(input, output, resolvedVideoOffset, totalLength)
-                }
-            } ?: false
-
-            if (success) {
-                values.clear()
-                values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                contentResolver.update(newUri, values, null, null)
-                // Trash original photo logic should be handled by the UI/ViewModel because it requires a PendingIntent on Android 11+
-                return@withContext true
-            } else {
-                contentResolver.delete(newUri, null, null)
-                return@withContext false
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Error compacting photo ${photo.uri}", e)
-            false
-        }
-    }
-
     private fun querySourceRelativePath(uri: Uri): String? {
-
         val projection = arrayOf(MediaStore.MediaColumns.RELATIVE_PATH)
         context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
             if (!cursor.moveToFirst()) return null
@@ -284,5 +492,4 @@ class MotionPhotoRepository(private val context: Context) {
         }
         return null
     }
-
 }
