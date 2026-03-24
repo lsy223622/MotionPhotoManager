@@ -49,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -148,6 +147,7 @@ fun BottomFloatingConsole(
         MotionPhotoProcessingMode.VIDEO_ONLY -> stringResource(R.string.action_extract_motion)
         MotionPhotoProcessingMode.SPLIT_BOTH -> stringResource(R.string.action_split_motion)
     }
+    val processingThumbnailIndicatorColor = MaterialTheme.colorScheme.primary
 
     val actionButtonContainerColor by animateColorAsState(
         targetValue = if (isSelecting) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
@@ -394,7 +394,7 @@ fun BottomFloatingConsole(
                         val listMaxWidth = (constraints.maxWidth - summaryWidth - spacingPx).coerceAtLeast(0)
 
                         val listPlaceables = subcompose("thumbnails") {
-                            Box(modifier = Modifier.fillMaxWidth().height(44.dp)) {
+                            Box(modifier = Modifier.fillMaxWidth().height(50.dp)) {
                                 LazyRow(
                                     state = thumbnailListState,
                                     modifier = Modifier.fillMaxWidth(),
@@ -435,24 +435,36 @@ fun BottomFloatingConsole(
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(44.dp)
-                                                    .shadow(
-                                                        elevation = if (isHighlighted) 14.dp else 0.dp,
-                                                        shape = shape,
-                                                        ambientColor = primaryButtonContainerColor,
-                                                        spotColor = primaryButtonContainerColor
-                                                    )
-                                                    .clip(shape)
-                                                    .clickable { onPreviewPhoto(item.photo) }
+                                                    .width(44.dp)
+                                                    .height(50.dp),
+                                                contentAlignment = Alignment.TopCenter
                                             ) {
-                                                AsyncImage(
-                                                    model = imageRequest,
-                                                    contentDescription = null,
+                                                Box(
                                                     modifier = Modifier
-                                                        .fillMaxSize()
-                                                        .clip(shape),
-                                                    contentScale = ContentScale.Crop
-                                                )
+                                                        .size(44.dp)
+                                                        .clip(shape)
+                                                        .clickable { onPreviewPhoto(item.photo) }
+                                                ) {
+                                                    AsyncImage(
+                                                        model = imageRequest,
+                                                        contentDescription = null,
+                                                        modifier = Modifier
+                                                            .fillMaxSize()
+                                                            .clip(shape),
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
+
+                                                if (isHighlighted) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .width(22.dp)
+                                                            .height(3.dp)
+                                                            .clip(ContinuousRoundedRectangle(2.dp))
+                                                            .background(processingThumbnailIndicatorColor)
+                                                    )
+                                                }
                                             }
                                         }
                                     }

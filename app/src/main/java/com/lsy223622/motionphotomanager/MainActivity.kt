@@ -421,7 +421,7 @@ private fun HomeActionOptionsRow(
     val selectorHorizontalInset = 4.dp
     val selectorVerticalInset = 4.dp
     val selectedIndex = optionLabels.indexOfFirst { it.first == selectedMode }.coerceAtLeast(0)
-    val optionMetrics = remember(optionLabels) {
+    val optionMetrics = remember {
         mutableStateListOf<OptionMetric>().apply {
             repeat(optionLabels.size) {
                 add(OptionMetric(0.dp, 0.dp))
@@ -430,16 +430,35 @@ private fun HomeActionOptionsRow(
     }
     var selectorRootOffset by remember { mutableStateOf(0.dp) }
     val selectedMetric = optionMetrics.getOrNull(selectedIndex) ?: OptionMetric(0.dp, 0.dp)
-    val indicatorOffset by animateDpAsState(
-        targetValue = selectedMetric.offset,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-        label = "ModeIndicatorOffset"
-    )
-    val indicatorWidth by animateDpAsState(
-        targetValue = selectedMetric.width,
-        animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-        label = "ModeIndicatorWidth"
-    )
+    val hasMeasuredOptions = optionMetrics.all { it.width > 0.dp }
+    var enableIndicatorAnimation by remember { mutableStateOf(false) }
+
+    LaunchedEffect(hasMeasuredOptions) {
+        if (hasMeasuredOptions && !enableIndicatorAnimation) {
+            enableIndicatorAnimation = true
+        }
+    }
+
+    val indicatorOffset = if (enableIndicatorAnimation) {
+        val animatedOffset by animateDpAsState(
+            targetValue = selectedMetric.offset,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            label = "ModeIndicatorOffset"
+        )
+        animatedOffset
+    } else {
+        selectedMetric.offset
+    }
+    val indicatorWidth = if (enableIndicatorAnimation) {
+        val animatedWidth by animateDpAsState(
+            targetValue = selectedMetric.width,
+            animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+            label = "ModeIndicatorWidth"
+        )
+        animatedWidth
+    } else {
+        selectedMetric.width
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
