@@ -1,13 +1,17 @@
 package com.lsy223622.motionphotomanager.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -23,9 +27,9 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -38,11 +42,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kyant.capsule.ContinuousRoundedRectangle
 import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
-import sv.lib.squircleshape.SquircleShape
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -56,6 +60,7 @@ import java.util.Locale
 fun MotionPhotoGrid(
     photos: List<MotionPhoto>,
     selectedIds: Set<Long>,
+    previewingPhotoId: Long?,
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     onToggleSelection: (Long) -> Unit,
@@ -68,6 +73,7 @@ fun MotionPhotoGrid(
 ) {
     val dateFormat = stringResource(R.string.date_group_title_format)
     val groupedPhotos = remember(photos, dateFormat) { buildDateGroups(photos, dateFormat) }
+    val showThumbnailCheckboxes = selectedIds.isNotEmpty()
 
     PullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -111,6 +117,8 @@ fun MotionPhotoGrid(
                             PhotoGridItem(
                                 photo = photo,
                                 isSelected = selectedIds.contains(photo.id),
+                                showSelectionControls = showThumbnailCheckboxes,
+                                isPreviewing = previewingPhotoId == photo.id,
                                 onPreviewPhoto = onPreviewPhoto,
                                 onToggleSelection = onToggleSelection,
                                 sharedTransitionScope = sharedTransitionScope,
@@ -179,6 +187,8 @@ private fun DateGroupHeader(
 private fun PhotoGridItem(
     photo: MotionPhoto,
     isSelected: Boolean,
+    showSelectionControls: Boolean,
+    isPreviewing: Boolean,
     onPreviewPhoto: (MotionPhoto) -> Unit,
     onToggleSelection: (Long) -> Unit,
     sharedTransitionScope: SharedTransitionScope,
@@ -197,7 +207,14 @@ private fun PhotoGridItem(
     Box(
         modifier = modifier
             .aspectRatio(1f)
-            .clickable { onPreviewPhoto(photo) }
+            .combinedClickable(
+                onClick = { onPreviewPhoto(photo) },
+                onLongClick = {
+                    if (!showSelectionControls) {
+                        onToggleSelection(photo.id)
+                    }
+                }
+            )
     ) {
         with(sharedTransitionScope) {
             Box(
@@ -211,9 +228,9 @@ private fun PhotoGridItem(
                                 stiffness = Spring.StiffnessMediumLow
                             )
                         },
-                        clipInOverlayDuringTransition = OverlayClip(SquircleShape(10.dp, smoothing = 20))
+                        clipInOverlayDuringTransition = OverlayClip(ContinuousRoundedRectangle(10.dp))
                     )
-                    .clip(SquircleShape(10.dp, smoothing = 20))
+                    .clip(ContinuousRoundedRectangle(10.dp))
                     .fillMaxSize()
             ) {
                 AsyncImage(
@@ -222,25 +239,34 @@ private fun PhotoGridItem(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+
+                AnimatedVisibility(
+                    visible = isSelected && !isPreviewing,
+                    enter = fadeIn(animationSpec = tween(durationMillis = PREVIEW_EXIT_BOUNDS_DURATION_MS)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS))
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                    )
+                }
+
+                AnimatedVisibility(
+                    visible = showSelectionControls && !isPreviewing,
+                    enter = fadeIn(animationSpec = tween(durationMillis = PREVIEW_EXIT_BOUNDS_DURATION_MS)),
+                    exit = fadeOut(animationSpec = tween(durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS)),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                ) {
+                    CircularSelectionCheckbox(
+                        state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
+                        onClick = { onToggleSelection(photo.id) }
+                    )
+                }
             }
         }
-
-        if (isSelected) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(SquircleShape(10.dp, smoothing = 20))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
-            )
-        }
-
-        CircularSelectionCheckbox(
-            state = if (isSelected) CircleCheckState.Checked else CircleCheckState.Unchecked,
-            onClick = { onToggleSelection(photo.id) },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(6.dp)
-        )
     }
 }
 

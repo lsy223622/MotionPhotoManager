@@ -81,6 +81,7 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.kyant.capsule.ContinuousRoundedRectangle
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.data.MotionPhotoProcessingMode
 import com.lsy223622.motionphotomanager.ui.MotionPhotoViewModel
@@ -91,7 +92,6 @@ import com.lsy223622.motionphotomanager.ui.screen.PREVIEW_FADE_IN_DURATION_MS
 import com.lsy223622.motionphotomanager.ui.screen.PREVIEW_FADE_OUT_DURATION_MS
 import com.lsy223622.motionphotomanager.ui.theme.MotionPhotoManagerTheme
 import android.graphics.Color as AndroidColor
-import sv.lib.squircleshape.SquircleShape
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
@@ -206,12 +206,13 @@ class MainActivity : ComponentActivity() {
                                         Text(stringResource(R.string.no_motion_photos_found), color = Color.Gray)
                                     }
                                 } else {
-                                    MotionPhotoGrid(
-                                        photos = uiState.photos,
-                                        selectedIds = uiState.selectedIds,
-                                        isRefreshing = uiState.isLoading && uiState.photos.isNotEmpty(),
-                                        onRefresh = { viewModel.loadPhotos() },
-                                        onToggleSelection = { viewModel.toggleSelection(it) },
+                                     MotionPhotoGrid(
+                                         photos = uiState.photos,
+                                         selectedIds = uiState.selectedIds,
+                                         previewingPhotoId = uiState.previewPhoto?.id,
+                                         isRefreshing = uiState.isLoading && uiState.photos.isNotEmpty(),
+                                         onRefresh = { viewModel.loadPhotos() },
+                                         onToggleSelection = { viewModel.toggleSelection(it) },
                                         onToggleDaySelection = { viewModel.toggleSelectionForIds(it) },
                                         onPreviewPhoto = { viewModel.openPreview(it) },
                                         sharedTransitionScope = this@SharedTransitionLayout,
@@ -444,7 +445,7 @@ private fun HomeActionOptionsRow(
             modifier = Modifier
                 .wrapContentWidth()
                 .height(44.dp)
-                .clip(SquircleShape(22.dp, smoothing = 20))
+                .clip(ContinuousRoundedRectangle(22.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f))
                 .onGloballyPositioned { coordinates ->
                     selectorRootOffset = with(density) { coordinates.positionInRoot().x.toDp() }
@@ -457,7 +458,7 @@ private fun HomeActionOptionsRow(
                         .offset(x = indicatorOffset)
                         .width(indicatorWidth)
                         .height(44.dp - selectorVerticalInset * 2)
-                        .clip(SquircleShape(18.dp, smoothing = 20))
+                        .clip(ContinuousRoundedRectangle(18.dp))
                         .background(MaterialTheme.colorScheme.primary)
                 )
             }

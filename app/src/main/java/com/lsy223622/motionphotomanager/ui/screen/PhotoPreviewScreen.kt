@@ -12,6 +12,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -65,6 +67,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kyant.capsule.ContinuousRoundedRectangle
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.ui.components.CircleCheckState
 import com.lsy223622.motionphotomanager.ui.components.CircularSelectionCheckbox
@@ -349,6 +352,8 @@ internal fun MotionPhotoPreviewScreen(
                     photo = pagePhoto,
                     photoAspectRatio = photoAspectRatio,
                     isActivePage = isActivePage,
+                    isSelected = isActivePage && isSelected,
+                    animateSelectionChrome = isActivePage && isSelected && isTransitionRunning && !isExiting,
                     sharedTransitionScope = sharedTransitionScope,
                     animatedVisibilityScope = animatedVisibilityScope,
                     visualModifier = visualModifier,
@@ -457,6 +462,8 @@ private fun PreviewSharedImage(
     photo: MotionPhoto,
     photoAspectRatio: Float,
     isActivePage: Boolean,
+    isSelected: Boolean,
+    animateSelectionChrome: Boolean,
     sharedTransitionScope: SharedTransitionScope,
     animatedVisibilityScope: AnimatedVisibilityScope,
     visualModifier: Modifier,
@@ -470,6 +477,22 @@ private fun PreviewSharedImage(
             .memoryCacheKey("photo_cache_${photo.id}")
             .placeholderMemoryCacheKey("photo_cache_${photo.id}")
             .build()
+    }
+    val selectionChromeAlpha = remember(photo.id) { Animatable(0f) }
+
+    LaunchedEffect(photo.id, animateSelectionChrome) {
+        if (animateSelectionChrome) {
+            selectionChromeAlpha.snapTo(1f)
+            selectionChromeAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = PREVIEW_SHARED_BOUNDS_DURATION_MS,
+                    easing = FastOutLinearInEasing
+                )
+            )
+        } else {
+            selectionChromeAlpha.snapTo(0f)
+        }
     }
 
     with(sharedTransitionScope) {
@@ -512,6 +535,25 @@ private fun PreviewSharedImage(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+
+                if (isActivePage && isSelected && selectionChromeAlpha.value > 0f) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(ContinuousRoundedRectangle(10.dp))
+                            .alpha(selectionChromeAlpha.value)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                    )
+
+                    CircularSelectionCheckbox(
+                        state = CircleCheckState.Checked,
+                        onClick = {},
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .alpha(selectionChromeAlpha.value)
+                    )
+                }
             }
         }
     }

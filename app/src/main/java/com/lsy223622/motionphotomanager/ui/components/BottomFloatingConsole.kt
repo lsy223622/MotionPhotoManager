@@ -62,12 +62,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.kyant.capsule.ContinuousRoundedRectangle
 import com.lsy223622.motionphotomanager.R
 import com.lsy223622.motionphotomanager.data.MotionPhoto
 import com.lsy223622.motionphotomanager.data.MotionPhotoProcessingMode
 import com.lsy223622.motionphotomanager.ui.UiState
 import kotlinx.coroutines.delay
-import sv.lib.squircleshape.SquircleShape
 
 private data class AnimatedThumbnailItem(
     val photo: MotionPhoto,
@@ -330,7 +330,7 @@ fun BottomFloatingConsole(
 
     Surface(
         modifier = modifier.fillMaxWidth().height(consoleHeight),
-        shape = SquircleShape(40.dp, smoothing = 20),
+        shape = ContinuousRoundedRectangle(40.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 8.dp,
         shadowElevation = 8.dp
@@ -414,7 +414,7 @@ fun BottomFloatingConsole(
                                                 .placeholderMemoryCacheKey("photo_cache_${item.photo.id}")
                                                 .build()
                                         }
-                                        val shape = SquircleShape(8.dp, smoothing = 20)
+                                        val shape = ContinuousRoundedRectangle(8.dp)
                                         val isHighlighted = item.photo.id == highlightedPhotoId
                                         androidx.compose.animation.AnimatedVisibility(
                                             visibleState = item.visibilityState,
@@ -577,7 +577,7 @@ fun BottomFloatingConsole(
                                     contentColor = cancelButtonContentColor
                                 ),
                                 modifier = Modifier.fillMaxSize().alpha(cancelButtonAlpha),
-                                shape = SquircleShape(25.dp, smoothing = 20),
+                                shape = ContinuousRoundedRectangle(25.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                             ) {
                                 Text(
@@ -612,7 +612,7 @@ fun BottomFloatingConsole(
                                 disabledContentColor = primaryButtonContentColor
                             ),
                             modifier = Modifier.fillMaxSize(),
-                            shape = SquircleShape(25.dp, smoothing = 20),
+                            shape = ContinuousRoundedRectangle(25.dp),
                             contentPadding = if (uiState.isConfirming || uiState.isProcessing) {
                                 PaddingValues(horizontal = 10.dp, vertical = 8.dp)
                             } else {
